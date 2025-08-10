@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Geolocalizzazione</title>
+</head>
+<body>
+<h1>Test della Geolocalizzazione</h1>
+<button onclick="getLocation()">📍 Mostra la mia posizione</button>
+<p id="output"></p>
+
+<script>
+function getLocation() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                document.getElementById('output').innerText =
+                    `Lat: ${pos.coords.latitude}, Lon: ${pos.coords.longitude}`;
+            },
+            err => {
+                document.getElementById('output').innerText =
+                    `Errore: ${err.message}`;
+            }
+        );
+    } else {
+        document.getElementById('output').innerText =
+            "La geolocalizzazione non è supportata dal tuo browser.";
+    }
+}
+</script>
+</body>
+</html>
