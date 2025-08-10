@@ -1,33 +1,377 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Test Geolocalizzazione</title>
+  <meta charset="UTF-8">
+  <title>Punti d'acqua ICNF</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css">
+  <style>
+    html, body, #viewDiv {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    
+    /* Pannelli ridisegnati per mobile */
+    #infoPanel {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      right: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 12px;
+      border-radius: 12px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      max-height: 30%;
+      overflow-y: auto;
+      z-index: 10;
+      display: block;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    #togglePanel {
+      position: absolute;
+      top: 70px;
+      right: 15px;
+      background: #fff;
+      padding: 8px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      z-index: 10;
+      border: 1px solid #ddd;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+      font-size: 16px;
+    }
+    
+    #gpsButton {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      background: #fff;
+      padding: 10px;
+      border-radius: 20px;
+      z-index: 10;
+      border: 1px solid #ddd;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+    }
+    
+    #loadingMessage {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.3);
+      z-index: 1000;
+      width: 80%;
+      text-align: center;
+    }
+    
+    .hidden {
+      display: none !important;
+    }
+    
+    .esri-popup__main-container {
+      max-height: 50vh !important;
+    }
+    
+    .popup-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    
+    .popup-table th, .popup-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    /* Miglioramenti per iOS */
+    @supports (-webkit-touch-callout: none) {
+      #infoPanel {
+        padding-bottom: 20px; /* Evita il notch */
+      }
+    }
+  </style>
 </head>
 <body>
-<h1>Test della Geolocalizzazione</h1>
-<button onclick="getLocation()">📍 Mostra la mia posizione</button>
-<p id="output"></p>
+  <div id="viewDiv"></div>
+  <div id="infoPanel"></div>
+  <div id="togglePanel">◀</div>
+  <button id="gpsButton" title="Usa la mia posizione">📍</button>
+  <div id="loadingMessage">Caricamento dati WFS...</div>
 
-<script>
-function getLocation() {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            pos => {
-                document.getElementById('output').innerText =
-                    `Lat: ${pos.coords.latitude}, Lon: ${pos.coords.longitude}`;
-            },
-            err => {
-                document.getElementById('output').innerText =
-                    `Errore: ${err.message}`;
-            }
-        );
-    } else {
-        document.getElementById('output').innerText =
-            "La geolocalizzazione non è supportata dal tuo browser.";
-    }
-}
-</script>
+  <script src="https://js.arcgis.com/4.29/"></script>
+  <script>
+    require([
+      "esri/Map",
+      "esri/views/MapView",
+      "esri/layers/GraphicsLayer",
+      "esri/Graphic",
+      "esri/geometry/Point",
+      "esri/geometry/Polyline",
+      "esri/geometry/geometryEngine",
+      "esri/geometry/SpatialReference",
+      "esri/symbols/SimpleMarkerSymbol",
+      "esri/symbols/SimpleLineSymbol",
+      "esri/geometry/projection",
+      "esri/widgets/Expand",
+      "esri/widgets/Locate"
+    ], function(
+      Map, MapView, GraphicsLayer, Graphic, Point, Polyline,
+      geometryEngine, SpatialReference, SimpleMarkerSymbol, SimpleLineSymbol,
+      projection, Expand, Locate
+    ) {
+
+      // Configurazione mappa mobile-friendly
+      const map = new Map({
+        basemap: "streets-navigation-vector"
+      });
+
+      const view = new MapView({
+        container: "viewDiv",
+        map: map,
+        center: [-8, 39.5],
+        zoom: 12,
+        popupEnabled: true,
+        ui: {
+          components: ["attribution"]
+        }
+      });
+
+      // Layer ottimizzati per mobile
+      const pointsLayer = new GraphicsLayer();
+      const linesLayer = new GraphicsLayer();
+      const userLocationLayer = new GraphicsLayer();
+      map.addMany([userLocationLayer, pointsLayer, linesLayer]);
+
+      // Elementi UI
+      const infoPanel = document.getElementById("infoPanel");
+      const toggle = document.getElementById("togglePanel");
+      const gpsButton = document.getElementById("gpsButton");
+      const loadingMessage = document.getElementById("loadingMessage");
+      let allPoints = [], nearest = [];
+      let watchHandler = null;
+
+      // Simboli ottimizzati per mobile
+      const waterPointSymbol = new SimpleMarkerSymbol({
+        color: [0, 112, 255, 0.9],
+        outline: {
+          color: [255, 255, 255],
+          width: 1.5
+        },
+        size: 10
+      });
+
+      const userLocationSymbol = new SimpleMarkerSymbol({
+        color: [255, 0, 0, 0.9],
+        outline: {
+          color: [255, 255, 255],
+          width: 2
+        },
+        size: 14
+      });
+
+      const lineSymbol = new SimpleLineSymbol({
+        color: [255, 0, 0, 0.7],
+        width: 2,
+        style: "short-dash"
+      });
+
+      // Widget GPS integrato
+      const locateWidget = new Locate({
+        view: view,
+        useHeadingEnabled: true,
+        goToOverride: function(view, options) {
+          options.target.scale = 2000; // Zoom livello quando si trova la posizione
+          return view.goTo(options.target);
+        }
+      });
+      view.ui.add(locateWidget, "top-left");
+
+      // GPS personalizzato con watchPosition
+      gpsButton.addEventListener("click", () => {
+        if (navigator.geolocation) {
+          if (watchHandler) {
+            navigator.geolocation.clearWatch(watchHandler);
+            watchHandler = null;
+            userLocationLayer.removeAll();
+            gpsButton.style.backgroundColor = "#fff";
+          } else {
+            gpsButton.style.backgroundColor = "#d4edff";
+            watchHandler = navigator.geolocation.watchPosition(
+              (position) => {
+                const pt = new Point({
+                  longitude: position.coords.longitude,
+                  latitude: position.coords.latitude,
+                  spatialReference: view.spatialReference
+                });
+                
+                userLocationLayer.removeAll();
+                userLocationLayer.add(new Graphic({
+                  geometry: pt,
+                  symbol: userLocationSymbol
+                }));
+                
+                // Centra la mappa sulla posizione
+                view.goTo({
+                  target: pt,
+                  zoom: 14
+                });
+                
+                // Trova punti vicini
+                findNearest(pt);
+              },
+              (error) => {
+                console.error("Errore GPS:", error);
+                alert("Impossibile ottenere la posizione: " + error.message);
+              },
+              {
+                enableHighAccuracy: true,
+                maximumAge: 30000,
+                timeout: 10000
+              }
+            );
+          }
+        } else {
+          alert("Geolocalizzazione non supportata dal tuo browser");
+        }
+      });
+
+      // Funzione popup mobile-friendly
+      function createPopupContent(attributes) {
+        const validAttributes = Object.entries(attributes)
+          .filter(([_, value]) => value !== null && value !== undefined && value !== "")
+          .sort((a, b) => a[0].localeCompare(b[0]));
+        
+        let html = `<div class="popup-content"><table class="popup-table"><tbody>`;
+        
+        validAttributes.forEach(([key, value]) => {
+          const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          html += `<tr><th>${formattedKey}</th><td>${value}</td></tr>`;
+        });
+        
+        html += `</tbody></table></div>`;
+        return html;
+      }
+
+      // Caricamento dati
+      const url = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4258";
+
+      projection.load().then(() => {
+        fetch(url)
+          .then(res => res.json())
+          .then(geojson => {
+            geojson.features.forEach(feat => {
+              const [lon, lat] = feat.geometry.coordinates;
+              const pt = new Point({
+                longitude: lon,
+                latitude: lat,
+                spatialReference: new SpatialReference({ wkid: 4258 })
+              });
+              
+              const projectedPt = projection.project(pt, view.spatialReference);
+              
+              const graphic = new Graphic({
+                geometry: projectedPt,
+                attributes: feat.properties,
+                symbol: waterPointSymbol,
+                popupTemplate: {
+                  title: feat.properties.nome || "Punto d'acqua",
+                  content: createPopupContent(feat.properties)
+                }
+              });
+              
+              allPoints.push(graphic);
+              pointsLayer.add(graphic);
+            });
+            loadingMessage.classList.add("hidden");
+          })
+          .catch(err => {
+            console.error("Errore nel caricamento WFS:", err);
+            loadingMessage.textContent = "Errore nel caricamento dei dati. Ricarica la pagina.";
+          });
+      });
+
+      // Ricerca punti vicini ottimizzata per mobile
+      function findNearest(pt) {
+        try {
+          if (!allPoints.length) return;
+          
+          linesLayer.removeAll();
+          
+          const distances = allPoints.map(g => {
+            const dist = geometryEngine.distance(pt, g.geometry, "meters");
+            return { feature: g, distance: Math.round(dist) };
+          });
+          
+          nearest = distances
+            .filter(o => o.distance <= 5000) // 5km
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 4);
+
+          nearest.forEach(item => {
+            const line = new Polyline({
+              paths: [[
+                [pt.x, pt.y],
+                [item.feature.geometry.x, item.feature.geometry.y]
+              ]],
+              spatialReference: view.spatialReference
+            });
+            
+            linesLayer.add(new Graphic({
+              geometry: line,
+              symbol: lineSymbol
+            }));
+          });
+
+          renderInfo();
+        } catch (err) {
+          console.error("Errore nella ricerca:", err);
+        }
+      }
+
+      // Visualizzazione info mobile
+      function renderInfo() {
+        let html = "<h3 style='margin-top:0'>Punti vicini (entro 5km):</h3>";
+        if (!nearest.length) {
+          html += "<p>Nessun punto trovato.</p>";
+        } else {
+          html += "<ul style='padding-left:20px'>";
+          nearest.forEach(o => {
+            const a = o.feature.attributes;
+            const name = a.nome || "Senza nome";
+            const type = a.tipologia ? ` (${a.tipologia})` : "";
+            html += `<li style='margin-bottom:8px'><strong>${name}${type}</strong><br>${o.distance} metri</li>`;
+          });
+          html += "</ul>";
+        }
+        infoPanel.innerHTML = html;
+      }
+
+      // Gestione UI mobile
+      toggle.addEventListener("click", () => {
+        const isVisible = !infoPanel.classList.contains("hidden");
+        infoPanel.classList.toggle("hidden");
+        toggle.innerHTML = isVisible ? "Mostra info ▲" : "Nascondi ▼";
+      });
+
+      // Tocca sulla mappa per cercare
+      view.on("click", (e) => {
+        findNearest(e.mapPoint);
+      });
+
+      // Adatta la mappa all'orientamento
+      window.addEventListener("orientationchange", () => {
+        setTimeout(() => view.resize(), 300);
+      });
+    });
+  </script>
 </body>
 </html>
