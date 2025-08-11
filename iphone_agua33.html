@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<title>Pontos de água ICNF</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css">
+<style>
+html,body,#viewDiv{margin:0;padding:0;height:100%;width:100%}
+#infoPanel{position:absolute;top:15px;right:15px;width:300px;background:#fff;padding:8px;border-radius:4px;box-shadow:0 0 6px rgba(0,0,0,.2);max-height:80%;overflow-y:auto;z-index:10}
+#togglePanel{position:absolute;top:15px;right:325px;background:#fff;padding:5px 10px;border-radius:4px;cursor:pointer;z-index:10;border:1px solid #ddd}
+#loadingMessage{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;padding:15px;border-radius:6px;box-shadow:0 0 10px rgba(0,0,0,.2);z-index:1000}
+#filterPanel{position:absolute;top:130px;left:15px;background:#fff;padding:10px;border-radius:4px;box-shadow:0 0 6px rgba(0,0,0,.2);z-index:10;width:250px}
+.hidden{display:none!important}
+select,input,button{width:100%;padding:8px;margin:5px 0;box-sizing:border-box}
+button{background-color:#0079c1;color:#fff;border:none;cursor:pointer}
+button:hover{background-color:#005a8c}
+.filter-section{margin-bottom:10px}
+.filter-title{font-weight:700;margin-bottom:5px}
+.checkbox-group{display:flex;flex-direction:column}
+#locateBtn{width:auto;padding:6px 10px;margin:0;background:#fff;color:#000;border:1px solid #ccc;border-radius:4px;cursor:pointer}
+#locateBtn:hover{background:#eee}
+</style>
+</head>
+<body>
+<div id="viewDiv"></div>
+<div id="infoPanel"></div>
+<div id="togglePanel">◀</div>
+
+<div id="filterPanel">
+  <div class="filter-section">
+    <div class="filter-title">Filtrar por:</div>
+    <select id="distritoFilter"><option value="">Todos os distritos</option></select>
+    <select id="concelhoFilter"><option value="">Todos os concelhos</option></select>
+  </div>
+  <div class="filter-section">
+    <div class="filter-title">Classe:</div>
+    <div class="checkbox-group">
+      <label><input type="checkbox" id="classeTerrestre" value="Terrestre" checked> Terrestre</label>
+      <label><input type="checkbox" id="classeAereo" value="Aéreo" checked> Aéreo</label>
+    </div>
+  </div>
+  <button id="applyFilter">Aplicar filtro</button>
+  <button id="resetFilter">Repor filtros</button>
+</div>
+
+<div id="loadingMessage">A carregar dados WFS...</div>
+
+<script src="https://js.arcgis.com/4.33/"></script>
+<script>
+require([
+  "esri/Map","esri/views/MapView","esri/layers/GraphicsLayer","esri/Graphic",
+  "esri/geometry/Point","esri/geometry/Polyline","esri/geometry/geometryEngine",
+  "esri/geometry/SpatialReference","esri/symbols/SimpleMarkerSymbol","esri/symbols/SimpleLineSymbol",
+  "esri/geometry/projection","esri/widgets/BasemapGallery","esri/widgets/Expand","esri/widgets/Search"
+],function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,geometryEngine,SpatialReference,
+  SimpleMarkerSymbol,SimpleLineSymbol,projection,BasemapGallery,Expand,Search){
+
+const map=new Map({basemap:"streets-navigation-vector"});
+const view=new MapView({
+  container:"viewDiv",
+  map:map,
+  center:[-8,39.5],
+  zoom:7,
+  popupEnabled:true
+});
+
+const pointsLayer=new GraphicsLayer(),
+      linesLayer=new GraphicsLayer(),
+      filteredPointsLayer=new GraphicsLayer(),
+      locationLayer=new GraphicsLayer();
+map.addMany([pointsLayer,linesLayer,filteredPointsLayer,locationLayer]);
+
+const infoPanel=document.getElementById("infoPanel"),
+      toggle=document.getElementById("togglePanel"),
+      loadingMessage=document.getElementById("loadingMessage"),
+      distritoFilter=document.getElementById("distritoFilter"),
+      concelhoFilter=document.getElementById("concelhoFilter"),
+      classeTerrestre=document.getElementById("classeTerrestre"),
+      classeAereo=document.getElementById("classeAereo"),
+      applyFilter=document.getElementById("applyFilter"),
+      resetFilter=document.getElementById("resetFilter");
+
+let allPoints=[],nearest=[],uniqueDistritos=new Set(),distritoConcelhoMap={};
+
+const waterPointSymbol=new SimpleMarkerSymbol({color:[0,112,255,0.8],outline:{color:[100,255,255],width:1},size:6}),
+      filteredPointSymbol=new SimpleMarkerSymbol({color:[255,0,0,0.8],outline:{color:[255,255,100],width:1},size:6}),
+      locationSymbol=new SimpleMarkerSymbol({color:[0,255,0,0.8],outline:{color:[255,255,255],width:2},size:10}),
+      lineSymbol=new SimpleLineSymbol({color:[255,0,0,0.6],width:1.5,style:"short-dash"});
+
+view.when(()=>{
+  // Basemap widget in basso a destra
+  const basemapGallery=new BasemapGallery({view:view});
+  const bgExpand=new Expand({
+    view:view,
+    content:basemapGallery,
+    expandIconClass:"esri-icon-basemap",
+    expandTooltip:"Mudar mapa base"
+  });
+  view.ui.add(bgExpand,"bottom-right");
+
+  // Search widget + bottone localizzazione in alto a destra
+  const searchWidget=new Search({view:view});
+  view.ui.add(searchWidget,{position:"top-right"});
+  const locateBtn=document.createElement("button");
+  locateBtn.id="locateBtn";
+  locateBtn.innerHTML="📍";
+  locateBtn.title="Localizar-me";
+  locateBtn.addEventListener("click",()=>{manualLocate();});
+  view.ui.add(locateBtn,{position:"top-right"});
+});
+
+function manualLocate(){
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(pos=>{
+      setLocation(pos.coords.longitude,pos.coords.latitude);
+    },err=>{
+      console.warn("Geolocalização falhou:",err);
+    });
+  }
+}
+function setLocation(lon,lat){
+  locationLayer.removeAll();
+  const point=new Point({longitude:lon,latitude:lat});
+  view.goTo({target:point,zoom:14});
+  locationLayer.add(new Graphic({geometry:point,symbol:locationSymbol}));
+}
+
+function createPopupContent(attrs){
+  const valid=Object.entries(attrs).filter(([k,v])=>v!=null&&v!=="");
+  valid.sort((a,b)=>a[0].localeCompare(b[0]));
+  let html="<table><tbody>";
+  valid.forEach(([k,v])=>{
+    const f=k.replace(/_/g," ").replace(/\b\w/g,l=>l.toUpperCase());
+    html+=`<tr><th>${f}</th><td>${v}</td></tr>`;
+  });
+  html+="</tbody></table>";
+  return html;
+}
+
+const url="https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4258";
+
+projection.load().then(()=>{
+  fetch(url).then(res=>res.json()).then(geojson=>{
+    geojson.features.forEach(feat=>{
+      const[lon,lat]=feat.geometry.coordinates;
+      const pt=new Point({longitude:lon,latitude:lat,spatialReference:{wkid:4258}});
+      const projectedPt=projection.project(pt,view.spatialReference);
+      const graphic=new Graphic({
+        geometry:projectedPt,
+        attributes:feat.properties,
+        symbol:waterPointSymbol,
+        popupTemplate:{title:feat.properties.nome||"Ponto de água",content:createPopupContent(feat.properties)}
+      });
+      allPoints.push(graphic);
+      pointsLayer.add(graphic);
+      const distrito=feat.properties.distrito||"Desconhecido";
+      const concelho=feat.properties.concelho||"Desconhecido";
+      uniqueDistritos.add(distrito);
+      if(!distritoConcelhoMap[distrito])distritoConcelhoMap[distrito]=new Set();
+      distritoConcelhoMap[distrito].add(concelho);
+    });
+    Array.from(uniqueDistritos).sort().forEach(d=>{
+      distritoFilter.appendChild(new Option(d,d));
+    });
+    distritoFilter.addEventListener("change",function(){
+      const sel=this.value;
+      concelhoFilter.innerHTML='<option value="">Todos os concelhos</option>';
+      if(sel&&distritoConcelhoMap[sel]){
+        Array.from(distritoConcelhoMap[sel]).sort().forEach(c=>{
+          concelhoFilter.appendChild(new Option(c,c));
+        });
+      }
+    });
+    loadingMessage.classList.add("hidden");
+  }).catch(err=>{
+    console.error("Erro WFS:",err);
+    loadingMessage.textContent="Erro ao carregar dados.";
+  });
+});
+
+function findNearest(pt){
+  if(!allPoints.length)return;
+  linesLayer.removeAll();
+  const distances=allPoints.map(g=>({feature:g,distance:Math.round(geometryEngine.distance(pt,g.geometry,"meters"))}));
+  nearest=distances.filter(o=>o.distance<=10000).sort((a,b)=>a.distance-b.distance).slice(0,4);
+  nearest.forEach(item=>{
+    const line=new Polyline({paths:[[pt.x,pt.y],[item.feature.geometry.x,item.feature.geometry.y]],spatialReference:view.spatialReference});
+    linesLayer.add(new Graphic({geometry:line,symbol:lineSymbol}));
+  });
+  renderInfo();
+}
+
+function renderInfo(){
+  let html="<h3>Pontos de água mais próximos (até 10 km):</h3>";
+  if(!nearest.length){
+    html+="<p>Nenhum ponto encontrado.</p>";
+  }else{
+    html+="<ul>";
+    nearest.forEach(o=>{
+      const a=o.feature.attributes;
+      const name=a.nome||"Sem nome";
+      const type=a.tipologia?` (${a.tipologia})`:"";
+      html+=`<li><strong>${name}${type}</strong> — ${o.distance} m</li>`;
+    });
+    html+="</ul>";
+  }
+  infoPanel.innerHTML=html;
+}
+
+applyFilter.addEventListener("click",function(){
+  const distrito=distritoFilter.value,
+        concelho=concelhoFilter.value,
+        showTer=classeTerrestre.checked,
+        showAe=classeAereo.checked;
+  pointsLayer.removeAll();
+  filteredPointsLayer.removeAll();
+  allPoints.forEach(g=>{
+    const a=g.attributes;
+    const matchD=!distrito||a.distrito===distrito;
+    const matchC=!concelho||a.concelho===concelho;
+    const matchCl=(!a.classe)||(showTer&&a.classe==="Terrestre")||(showAe&&a.classe==="Aéreo");
+    if(matchD&&matchC&&matchCl){
+      const fg=g.clone();
+      fg.symbol=filteredPointSymbol;
+      filteredPointsLayer.add(fg);
+    }
+  });
+});
+
+resetFilter.addEventListener("click",function(){
+  distritoFilter.value="";
+  concelhoFilter.value="";
+  concelhoFilter.innerHTML='<option value="">Todos os concelhos</option>';
+  classeTerrestre.checked=true;
+  classeAereo.checked=true;
+  pointsLayer.removeAll();
+  filteredPointsLayer.removeAll();
+  allPoints.forEach(g=>pointsLayer.add(g));
+});
+
+toggle.addEventListener("click",()=>{
+  const v=!infoPanel.classList.contains("hidden");
+  infoPanel.classList.toggle("hidden");
+  toggle.innerHTML=v?"▶":"◀";
+});
+
+view.on("pointer-move",e=>{
+  const pt=view.toMap({x:e.x,y:e.y});
+  if(pt)findNearest(pt);
+});
+
+});
+</script>
+</body>
+</html>
