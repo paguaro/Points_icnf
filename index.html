@@ -251,6 +251,11 @@
           expandTooltip: "Mudar mapa base"
         });
         view.ui.add(bgExpand, "bottom-right");
+		// Chiudi automaticamente il widget dopo la selezione della mappa
+basemapGallery.watch("activeBasemap", () => {
+  bgExpand.expanded = false;
+});
+
 
         const searchWidget = new Search({ view });
         view.ui.add(searchWidget, { position: "top-right", index: 1 });
