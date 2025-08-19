@@ -317,24 +317,44 @@ basemapGallery.watch("activeBasemap", () => {
       // WFS — use EPSG:4326 to avoid client projection & improve Chrome compatibility
       const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
-      // iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use plain fetch there.
+// iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use multi-route plain fetch only there.
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
       const isChromeIOS = /CriOS/.test(navigator.userAgent) && isIOS;
 
       if (isChromeIOS) {
-        fetch(wfsUrl, { mode: "cors", cache: "no-store", credentials: "omit" })
-          .then(r => r.json())
-          .then(geojson => {
-            if (!geojson || !geojson.features) throw new Error("Sem dados GeoJSON válidos.");
-            ingestFeatures(geojson.features);
-          })
-          .catch(err => {
-            console.warn("iOS Chrome fetch WFS falhou, tento fallback GeoJSONLayer:", err);
-            return fallbackGeoJSON();
-          })
-          .finally(() => loadingMessage.classList.add("hidden"));
+        (async () => {
+          const urls = [
+            wfsUrl,
+            "https://r.jina.ai/" + wfsUrl.replace(/^https?:\/\//, "https://"),
+            "https://r.jina.ai/" + wfsUrl.replace(/^https?:\/\//, "http://")
+          ];
+          let loaded = false;
+          for (const u of urls) {
+            try {
+              const res = await fetch(u, { cache: "no-store", credentials: "omit" });
+              const txt = await res.text();
+              const gj = JSON.parse(txt);
+              if (gj && gj.features) {
+                ingestFeatures(gj.features);
+                loaded = true;
+                break;
+              }
+            } catch (e) {
+              console.warn("CriOS fetch falhou:", u, e);
+            }
+          }
+          if (!loaded) {
+            try {
+              await fallbackGeoJSON();
+              loaded = true;
+            } catch (e) {
+              console.warn("CriOS fallback GeoJSONLayer falhou:", e);
+            }
+          }
+          loadingMessage.classList.add("hidden");
+        })();
       } else {
-        // Try esri/request first (handles proxies/CORS better); fallback to GeoJSONLayer if it fails
+        // Original path for all other browsers
         loadWFS()
           .catch(() => fallbackGeoJSON())
           .finally(() => loadingMessage.classList.add("hidden"));
