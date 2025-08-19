@@ -465,7 +465,21 @@
             symbol: waterPointSymbol,
             popupTemplate: {
               title: (feat.properties && (feat.properties.nome || feat.properties.tipologia)) || "Ponto de água",
-              content: createPopupContent(feat.properties || {})
+              content: function (event) {
+                var g = event.graphic;
+                var geom = g.geometry;
+                var attrs = g.attributes || {};
+                var lat = Number(geom.latitude).toFixed(6);
+                var lon = Number(geom.longitude).toFixed(6);
+                var wazeUrl  = "https://waze.com/ul?ll=" + lat + "%2C" + lon + "&navigate=yes&zoom=17";
+                var gmapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lon + "";
+                var infoHtml = createPopupContent(attrs);
+                var linksHtml = "<div style='margin-top:8px; display:flex; gap:10px; align-items:center;'>"
+                  + "<a href='" + wazeUrl + "' target='_blank' rel='noopener noreferrer'>Waze</a>"
+                  + "<a href='" + gmapsUrl + "' target='_blank' rel='noopener noreferrer' style='margin-left:8px;'>Google</a>"
+                  + "</div>";
+                return infoHtml + linksHtml;
+              }
             }
           });
           allPoints.push(g);
