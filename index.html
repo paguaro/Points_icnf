@@ -1,377 +1,43 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-  <meta charset="UTF-8">
-  <title>Punti d'acqua ICNF</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css">
-  <style>
-    html, body, #viewDiv {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      width: 100%;
-      overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    
-    /* Pannelli ridisegnati per mobile */
-    #infoPanel {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      right: 10px;
-      background: rgba(255,255,255,0.9);
-      padding: 12px;
-      border-radius: 12px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.2);
-      max-height: 30%;
-      overflow-y: auto;
-      z-index: 10;
-      display: block;
-      -webkit-overflow-scrolling: touch;
-    }
-    
-    #togglePanel {
-      position: absolute;
-      top: 70px;
-      right: 15px;
-      background: #fff;
-      padding: 8px 12px;
-      border-radius: 20px;
-      cursor: pointer;
-      z-index: 10;
-      border: 1px solid #ddd;
-      box-shadow: 0 0 5px rgba(0,0,0,0.2);
-      font-size: 16px;
-    }
-    
-    #gpsButton {
-      position: absolute;
-      top: 15px;
-      right: 15px;
-      background: #fff;
-      padding: 10px;
-      border-radius: 20px;
-      z-index: 10;
-      border: 1px solid #ddd;
-      box-shadow: 0 0 5px rgba(0,0,0,0.2);
-    }
-    
-    #loadingMessage {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: #fff;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.3);
-      z-index: 1000;
-      width: 80%;
-      text-align: center;
-    }
-    
-    .hidden {
-      display: none !important;
-    }
-    
-    .esri-popup__main-container {
-      max-height: 50vh !important;
-    }
-    
-    .popup-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
-    }
-    
-    .popup-table th, .popup-table td {
-      padding: 6px 8px;
-      border-bottom: 1px solid #eee;
-    }
-    
-    /* Miglioramenti per iOS */
-    @supports (-webkit-touch-callout: none) {
-      #infoPanel {
-        padding-bottom: 20px; /* Evita il notch */
-      }
-    }
-  </style>
-</head>
-<body>
-  <div id="viewDiv"></div>
-  <div id="infoPanel"></div>
-  <div id="togglePanel">◀</div>
-  <button id="gpsButton" title="Usa la mia posizione">📍</button>
-  <div id="loadingMessage">Caricamento dati WFS...</div>
-
-  <script src="https://js.arcgis.com/4.29/"></script>
-  <script>
-    require([
-      "esri/Map",
-      "esri/views/MapView",
-      "esri/layers/GraphicsLayer",
-      "esri/Graphic",
-      "esri/geometry/Point",
-      "esri/geometry/Polyline",
-      "esri/geometry/geometryEngine",
-      "esri/geometry/SpatialReference",
-      "esri/symbols/SimpleMarkerSymbol",
-      "esri/symbols/SimpleLineSymbol",
-      "esri/geometry/projection",
-      "esri/widgets/Expand",
-      "esri/widgets/Locate"
-    ], function(
-      Map, MapView, GraphicsLayer, Graphic, Point, Polyline,
-      geometryEngine, SpatialReference, SimpleMarkerSymbol, SimpleLineSymbol,
-      projection, Expand, Locate
-    ) {
-
-      // Configurazione mappa mobile-friendly
-      const map = new Map({
-        basemap: "streets-navigation-vector"
-      });
-
-      const view = new MapView({
-        container: "viewDiv",
-        map: map,
-        center: [-8, 39.5],
-        zoom: 12,
-        popupEnabled: true,
-        ui: {
-          components: ["attribution"]
-        }
-      });
-
-      // Layer ottimizzati per mobile
-      const pointsLayer = new GraphicsLayer();
-      const linesLayer = new GraphicsLayer();
-      const userLocationLayer = new GraphicsLayer();
-      map.addMany([userLocationLayer, pointsLayer, linesLayer]);
-
-      // Elementi UI
-      const infoPanel = document.getElementById("infoPanel");
-      const toggle = document.getElementById("togglePanel");
-      const gpsButton = document.getElementById("gpsButton");
-      const loadingMessage = document.getElementById("loadingMessage");
-      let allPoints = [], nearest = [];
-      let watchHandler = null;
-
-      // Simboli ottimizzati per mobile
-      const waterPointSymbol = new SimpleMarkerSymbol({
-        color: [0, 112, 255, 0.9],
-        outline: {
-          color: [255, 255, 255],
-          width: 1.5
-        },
-        size: 10
-      });
-
-      const userLocationSymbol = new SimpleMarkerSymbol({
-        color: [255, 0, 0, 0.9],
-        outline: {
-          color: [255, 255, 255],
-          width: 2
-        },
-        size: 14
-      });
-
-      const lineSymbol = new SimpleLineSymbol({
-        color: [255, 0, 0, 0.7],
-        width: 2,
-        style: "short-dash"
-      });
-
-      // Widget GPS integrato
-      const locateWidget = new Locate({
-        view: view,
-        useHeadingEnabled: true,
-        goToOverride: function(view, options) {
-          options.target.scale = 2000; // Zoom livello quando si trova la posizione
-          return view.goTo(options.target);
-        }
-      });
-      view.ui.add(locateWidget, "top-left");
-
-      // GPS personalizzato con watchPosition
-      gpsButton.addEventListener("click", () => {
-        if (navigator.geolocation) {
-          if (watchHandler) {
-            navigator.geolocation.clearWatch(watchHandler);
-            watchHandler = null;
-            userLocationLayer.removeAll();
-            gpsButton.style.backgroundColor = "#fff";
-          } else {
-            gpsButton.style.backgroundColor = "#d4edff";
-            watchHandler = navigator.geolocation.watchPosition(
-              (position) => {
-                const pt = new Point({
-                  longitude: position.coords.longitude,
-                  latitude: position.coords.latitude,
-                  spatialReference: view.spatialReference
-                });
-                
-                userLocationLayer.removeAll();
-                userLocationLayer.add(new Graphic({
-                  geometry: pt,
-                  symbol: userLocationSymbol
-                }));
-                
-                // Centra la mappa sulla posizione
-                view.goTo({
-                  target: pt,
-                  zoom: 14
-                });
-                
-                // Trova punti vicini
-                findNearest(pt);
-              },
-              (error) => {
-                console.error("Errore GPS:", error);
-                alert("Impossibile ottenere la posizione: " + error.message);
-              },
-              {
-                enableHighAccuracy: true,
-                maximumAge: 30000,
-                timeout: 10000
-              }
-            );
-          }
-        } else {
-          alert("Geolocalizzazione non supportata dal tuo browser");
-        }
-      });
-
-      // Funzione popup mobile-friendly
-      function createPopupContent(attributes) {
-        const validAttributes = Object.entries(attributes)
-          .filter(([_, value]) => value !== null && value !== undefined && value !== "")
-          .sort((a, b) => a[0].localeCompare(b[0]));
-        
-        let html = `<div class="popup-content"><table class="popup-table"><tbody>`;
-        
-        validAttributes.forEach(([key, value]) => {
-          const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-          html += `<tr><th>${formattedKey}</th><td>${value}</td></tr>`;
-        });
-        
-        html += `</tbody></table></div>`;
-        return html;
-      }
-
-      // Caricamento dati
-      const url = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4258";
-
-      projection.load().then(() => {
-        fetch(url)
-          .then(res => res.json())
-          .then(geojson => {
-            geojson.features.forEach(feat => {
-              const [lon, lat] = feat.geometry.coordinates;
-              const pt = new Point({
-                longitude: lon,
-                latitude: lat,
-                spatialReference: new SpatialReference({ wkid: 4258 })
-              });
-              
-              const projectedPt = projection.project(pt, view.spatialReference);
-              
-              const graphic = new Graphic({
-                geometry: projectedPt,
-                attributes: feat.properties,
-                symbol: waterPointSymbol,
-                popupTemplate: {
-                  title: feat.properties.nome || "Punto d'acqua",
-                  content: createPopupContent(feat.properties)
-                }
-              });
-              
-              allPoints.push(graphic);
-              pointsLayer.add(graphic);
-            });
-            loadingMessage.classList.add("hidden");
-          })
-          .catch(err => {
-            console.error("Errore nel caricamento WFS:", err);
-            loadingMessage.textContent = "Errore nel caricamento dei dati. Ricarica la pagina.";
-          });
-      });
-
-      // Ricerca punti vicini ottimizzata per mobile
-      function findNearest(pt) {
-        try {
-          if (!allPoints.length) return;
-          
-          linesLayer.removeAll();
-          
-          const distances = allPoints.map(g => {
-            const dist = geometryEngine.distance(pt, g.geometry, "meters");
-            return { feature: g, distance: Math.round(dist) };
-          });
-          
-          nearest = distances
-            .filter(o => o.distance <= 5000) // 5km
-            .sort((a, b) => a.distance - b.distance)
-            .slice(0, 4);
-
-          nearest.forEach(item => {
-            const line = new Polyline({
-              paths: [[
-                [pt.x, pt.y],
-                [item.feature.geometry.x, item.feature.geometry.y]
-              ]],
-              spatialReference: view.spatialReference
-            });
-            
-            linesLayer.add(new Graphic({
-              geometry: line,
-              symbol: lineSymbol
-            }));
-          });
-
-          renderInfo();
-        } catch (err) {
-          console.error("Errore nella ricerca:", err);
-        }
-      }
-
-      // Visualizzazione info mobile
-      function renderInfo() {
-        let html = "<h3 style='margin-top:0'>Punti vicini (entro 5km):</h3>";
-        if (!nearest.length) {
-          html += "<p>Nessun punto trovato.</p>";
-        } else {
-          html += "<ul style='padding-left:20px'>";
-          nearest.forEach(o => {
-            const a = o.feature.attributes;
-            const name = a.nome || "Senza nome";
-            const type = a.tipologia ? ` (${a.tipologia})` : "";
-            html += `<li style='margin-bottom:8px'><strong>${name}${type}</strong><br>${o.distance} metri</li>`;
-          });
-          html += "</ul>";
-        }
-        infoPanel.innerHTML = html;
-      }
-
-      // Gestione UI mobile
-      toggle.addEventListener("click", () => {
-        const isVisible = !infoPanel.classList.contains("hidden");
-        infoPanel.classList.toggle("hidden");
-        toggle.innerHTML = isVisible ? "Mostra info ▲" : "Nascondi ▼";
-      });
-
-      // Tocca sulla mappa per cercare
-      view.on("click", (e) => {
-        findNearest(e.mapPoint);
-      });
-
-      // Adatta la mappa all'orientamento
-      window.addEventListener("orientationchange", () => {
-        setTimeout(() => view.resize(), 300);
-      });
-    });
-  </script>
-</body>
-</html>
+<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><title>Pontos de água ICNF</title><meta name="viewport" content="width=device-width, initial-scale=1,maximum-scale=1"><link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css"><style>html,body,#viewDiv{margin:0;padding:0;height:100%;width:100%}#infoPanel,#filterPanel{position:absolute;background:#fff;padding:6px;border-radius:4px;box-shadow:0 0 6px rgba(0,0,0,.2);font-size:12px;z-index:10;max-height:50%;overflow-y:auto;transition:max-height .3s,opacity .3s}#infoPanel{top:100px;right:10px;width:240px}#filterPanel{top:130px;left:10px;width:200px;overflow:hidden}#toggleInfo,#toggleFilter{position:absolute;top:4px;left:4px;background:#eee;border:none;cursor:pointer;border-radius:3px;padding:0 4px;font-size:14px}#loadingMessage{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;padding:15px;border-radius:6px;box-shadow:0 0 10px rgba(0,0,0,.2);z-index:1000;font-size:14px}select,button{width:100%;padding:6px;margin:3px 0;box-sizing:border-box;font-size:12px}button{background-color:#0079c1;color:#fff;border:none;cursor:pointer}button:hover{background-color:#005a8c}.hidden{display:none!important}</style></head><body><div id="viewDiv"></div><div id="infoPanel"><button id="toggleInfo">◀</button><div id="infoContent"></div></div><div id="filterPanel"><button id="toggleFilter">◀</button><strong>Filtrar por:</strong><select id="distritoFilter"><option value="">Todos os distritos</option></select><select id="concelhoFilter"><option value="">Todos os concelhos</option></select><button id="applyFilter">Aplicar filtro</button><button id="resetFilter">Repor filtros</button></div><div id="loadingMessage">A carregar dados WFS...</div><script src="https://js.arcgis.com/4.33/"></script><script>require(["esri/Map","esri/views/MapView","esri/layers/GraphicsLayer","esri/Graphic","esri/geometry/Point","esri/geometry/Polyline","esri/geometry/geometryEngine","esri/symbols/SimpleMarkerSymbol","esri/symbols/SimpleLineSymbol","esri/geometry/projection","esri/widgets/BasemapGallery","esri/widgets/Expand","esri/widgets/Search"],function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,geometryEngine,SimpleMarkerSymbol,SimpleLineSymbol,projection,BasemapGallery,Expand,Search){
+const map=new Map({basemap:"streets-navigation-vector"});
+const view=new MapView({container:"viewDiv",map:map,center:[-8,39.5],zoom:7,popupEnabled:true});
+const pointsLayer=new GraphicsLayer(),linesLayer=new GraphicsLayer(),filteredPointsLayer=new GraphicsLayer(),locationLayer=new GraphicsLayer();map.addMany([pointsLayer,linesLayer,filteredPointsLayer,locationLayer]);
+const infoPanel=document.getElementById("infoPanel"),infoContent=document.getElementById("infoContent"),toggleInfo=document.getElementById("toggleInfo"),loadingMessage=document.getElementById("loadingMessage"),distritoFilter=document.getElementById("distritoFilter"),concelhoFilter=document.getElementById("concelhoFilter"),applyFilter=document.getElementById("applyFilter"),resetFilter=document.getElementById("resetFilter"),toggleFilter=document.getElementById("toggleFilter"),filterPanel=document.getElementById("filterPanel");
+let allPoints=[],nearest=[],uniqueDistritos=new Set(),distritoConcelhoMap={};
+const waterPointSymbol=new SimpleMarkerSymbol({color:[0,112,255,0.8],outline:{color:[100,255,255],width:1},size:4}),
+filteredPointSymbol=new SimpleMarkerSymbol({color:[255,0,0,0.8],outline:{color:[255,255,100],width:1},size:4}),
+locationSymbol=new SimpleMarkerSymbol({color:[0,255,0,0.8],outline:{color:[255,255,255],width:2},size:10}),
+lineSymbol=new SimpleLineSymbol({color:[255,0,0,0.6],width:1.5,style:"short-dash"});
+view.when(()=>{
+const basemapGallery=new BasemapGallery({view:view});
+const bgExpand=new Expand({view:view,content:basemapGallery,expandIconClass:"esri-icon-basemap",expandTooltip:"Mudar mapa base"});
+view.ui.add(bgExpand,"bottom-right");
+const searchWidget=new Search({view:view});
+view.ui.add(searchWidget,{position:"top-right"});
+const locateBtn=document.createElement("button");
+locateBtn.innerHTML="📍";locateBtn.title="Localizar-me";locateBtn.style.cssText="width:auto;padding:6px;margin-left:5px;background:#fff;color:#000;border:1px solid #ccc;border-radius:4px;cursor:pointer";
+locateBtn.addEventListener("click",()=>manualLocate());
+view.ui.add(locateBtn,{position:"top-right"});
+const resetExtentBtn=document.createElement("button");
+resetExtentBtn.innerHTML="↺";resetExtentBtn.title="Repor extensão inicial";resetExtentBtn.style.cssText="width:auto;padding:6px;background:#fff;color:#000;border:1px solid #ccc;border-radius:4px;cursor:pointer";
+resetExtentBtn.addEventListener("click",()=>view.goTo({center:[-8,39.5],zoom:7}));
+view.ui.add(resetExtentBtn,"top-left");
+});
+function manualLocate(){if(navigator.geolocation){navigator.geolocation.getCurrentPosition(pos=>{setLocation(pos.coords.longitude,pos.coords.latitude);});}}
+function setLocation(lon,lat){locationLayer.removeAll();const point=new Point({longitude:lon,latitude:lat});view.goTo({target:point,zoom:14});locationLayer.add(new Graphic({geometry:point,symbol:locationSymbol}));}
+function createPopupContent(attrs){const valid=Object.entries(attrs).filter(([k,v])=>v!=null&&v!=="");valid.sort((a,b)=>a[0].localeCompare(b[0]));let html="<table style='font-size:12px'><tbody>";valid.forEach(([k,v])=>{const f=k.replace(/_/g," ").replace(/\b\w/g,l=>l.toUpperCase());html+=`<tr><th>${f}</th><td>${v}</td></tr>`;});html+="</tbody></table>";return html;}
+const url="https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4258";
+projection.load().then(()=>{fetch(url).then(res=>res.json()).then(geojson=>{
+geojson.features.forEach(feat=>{const[lon,lat]=feat.geometry.coordinates;const pt=new Point({longitude:lon,latitude:lat,spatialReference:{wkid:4258}});const projectedPt=projection.project(pt,view.spatialReference);const graphic=new Graphic({geometry:projectedPt,attributes:feat.properties,symbol:waterPointSymbol,popupTemplate:{title:feat.properties.nome||"Ponto de água",content:createPopupContent(feat.properties)}});allPoints.push(graphic);pointsLayer.add(graphic);
+const distrito=feat.properties.distrito||"Desconhecido",concelho=feat.properties.concelho||"Desconhecido";uniqueDistritos.add(distrito);if(!distritoConcelhoMap[distrito])distritoConcelhoMap[distrito]=new Set();distritoConcelhoMap[distrito].add(concelho);});
+Array.from(uniqueDistritos).sort().forEach(d=>{distritoFilter.appendChild(new Option(d,d));});
+distritoFilter.addEventListener("change",function(){const sel=this.value;concelhoFilter.innerHTML='<option value="">Todos os concelhos</option>';if(sel&&distritoConcelhoMap[sel]){Array.from(distritoConcelhoMap[sel]).sort().forEach(c=>{concelhoFilter.appendChild(new Option(c,c));});}});
+loadingMessage.classList.add("hidden");});});
+function findNearest(pt){if(!allPoints.length)return;linesLayer.removeAll();const distances=allPoints.map(g=>({feature:g,distance:Math.round(geometryEngine.distance(pt,g.geometry,"meters"))}));nearest=distances.filter(o=>o.distance<=10000).sort((a,b)=>a.distance-b.distance).slice(0,4);nearest.forEach(item=>{const line=new Polyline({paths:[[pt.x,pt.y],[item.feature.geometry.x,item.feature.geometry.y]],spatialReference:view.spatialReference});linesLayer.add(new Graphic({geometry:line,symbol:lineSymbol}));});renderInfo();}
+function renderInfo(){let html="<h4>Pontos de água mais próximos (até 10 km):</h4>";if(!nearest.length){html+="<p>Nenhum ponto encontrado.</p>";}else{html+="<ul>";nearest.forEach(o=>{const a=o.feature.attributes,name=a.nome||"Sem nome",type=a.tipologia?` (${a.tipologia})`:"";html+=`<li>${name}${type} — ${o.distance} m</li>`;});html+="</ul>";}infoContent.innerHTML=html;}
+applyFilter.addEventListener("click",function(){const distrito=distritoFilter.value,concelho=concelhoFilter.value;pointsLayer.removeAll();filteredPointsLayer.removeAll();allPoints.forEach(g=>{const a=g.attributes,matchD=!distrito||a.distrito===distrito,matchC=!concelho||a.concelho===concelho;if(matchD&&matchC){const fg=g.clone();fg.symbol=filteredPointSymbol;filteredPointsLayer.add(fg);}});});
+resetFilter.addEventListener("click",function(){distritoFilter.value="";concelhoFilter.value="";concelhoFilter.innerHTML='<option value="">Todos os concelhos</option>';pointsLayer.removeAll();filteredPointsLayer.removeAll();allPoints.forEach(g=>pointsLayer.add(g));});
+toggleInfo.addEventListener("click",()=>{if(infoPanel.style.maxHeight==="20px"){infoPanel.style.maxHeight="500px";infoPanel.style.opacity="1";toggleInfo.textContent="◀";}else{infoPanel.style.maxHeight="20px";infoPanel.style.opacity="0.5";toggleInfo.textContent="▶";}});
+toggleFilter.addEventListener("click",()=>{if(filterPanel.style.maxHeight==="20px"){filterPanel.style.maxHeight="500px";filterPanel.style.opacity="1";toggleFilter.textContent="◀";}else{filterPanel.style.maxHeight="20px";filterPanel.style.opacity="0.5";toggleFilter.textContent="▶";}});
+view.on("pointer-move",e=>{const pt=view.toMap({x:e.x,y:e.y});if(pt)findNearest(pt);});
+});</script></body></html>
