@@ -66,6 +66,24 @@
       font-size: 14px;
     }
 
+    /* Error message */
+    #errorMessage {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #d32f2f;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 6px;
+      z-index: 1001;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+      display: none;
+      max-width: 80%;
+      text-align: center;
+      font-size: 14px;
+    }
+
     /* Form controls – prevent Chrome/iOS zoom on focus by keeping 16px+ */
     select, button {
       width: 100%;
@@ -120,16 +138,35 @@
 
     /* Ensure UI controls never scale with the map (ArcGIS keeps UI separate already, this avoids accidental page zoom state) */
     .esri-view { touch-action: pan-x pan-y; }
+
+    /* Loading indicator for filtering */
+    .filter-loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #0079c1;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
-  <div id="viewDiv"></div><div id="infoPanel" aria-live="polite">
-    <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">◀</button>
+  <div id="viewDiv"></div>
+  <div id="infoPanel" aria-live="polite">
+    <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
     <div id="infoContent"></div>
   </div>
 
   <div id="filterPanel">
-    <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">◀</button>
+    <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
     <strong style="display:block; margin-left: 22px; margin-bottom: 4px; font-size:8px;">Filtrar</strong>
     <select id="distritoFilter" aria-label="Filtrar por distrito">
       <option value="">Todos os distritos</option>
@@ -141,11 +178,14 @@
       <button id="applyFilter">Aplicar</button>
       <button id="resetFilter" class="btn-ghost">Repor</button>
     </div>
+    <div id="filterLoading" class="filter-loading hidden"></div>
   </div>
 
   <div id="loadingMessage">
     <div id="loadingBox">A carregar dados WFS…</div>
   </div>
+
+  <div id="errorMessage"></div>
 
   <script src="https://js.arcgis.com/4.33/"></script>
   <script>
@@ -203,12 +243,14 @@
       const infoContent = document.getElementById("infoContent");
       const toggleInfo = document.getElementById("toggleInfo");
       const loadingMessage = document.getElementById("loadingMessage");
+      const errorMessage = document.getElementById("errorMessage");
       const distritoFilter = document.getElementById("distritoFilter");
       const concelhoFilter = document.getElementById("concelhoFilter");
       const applyFilter = document.getElementById("applyFilter");
       const resetFilter = document.getElementById("resetFilter");
       const toggleFilter = document.getElementById("toggleFilter");
       const filterPanel = document.getElementById("filterPanel");
+      const filterLoading = document.getElementById("filterLoading");
 
       // State
       let allPoints = [];
@@ -238,6 +280,15 @@
         style: "short-dash"
       });
 
+      // Error handling function
+      function showError(message, duration = 5000) {
+        errorMessage.textContent = message;
+        errorMessage.style.display = 'block';
+        setTimeout(() => {
+          errorMessage.style.display = 'none';
+        }, duration);
+      }
+
       // ArcGIS UI
       view.when(() => {
         const basemapGallery = new BasemapGallery({ view: view });
@@ -250,11 +301,6 @@
         view.ui.add(bgExpand, "bottom-right");
         // Auto-close basemap after selection
         basemapGallery.watch("activeBasemap", () => { bgExpand.expanded = false; });
-		// Chiudi automaticamente il widget dopo la selezione della mappa
-basemapGallery.watch("activeBasemap", () => {
-  bgExpand.expanded = false;
-});
-
 
         const searchWidget = new Search({ view });
         view.ui.add(searchWidget, { position: "top-right", index: 1 });
@@ -288,10 +334,10 @@ basemapGallery.watch("activeBasemap", () => {
           navigator.geolocation.getCurrentPosition(pos => {
             setLocation(pos.coords.longitude, pos.coords.latitude);
           }, () => {
-            alert("Não foi possível obter a localização.");
+            showError("Não foi possível obter a localização.");
           }, { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 });
         } else {
-          alert("Geolocalização não suportada.");
+          showError("Geolocalização não suportada.");
         }
       }
 
@@ -317,7 +363,7 @@ basemapGallery.watch("activeBasemap", () => {
       // WFS — use EPSG:4326 to avoid client projection & improve Chrome compatibility
       const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
-// iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use multi-route plain fetch only there.
+      // iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use multi-route plain fetch only there.
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
       const isChromeIOS = /CriOS/.test(navigator.userAgent) && isIOS;
 
@@ -325,13 +371,13 @@ basemapGallery.watch("activeBasemap", () => {
         (async () => {
           const urls = [
             wfsUrl,
-            "https://r.jina.ai/" + wfsUrl.replace(/^https?:\/\//, "https://"),
-            "https://r.jina.ai/" + wfsUrl.replace(/^https?:\/\//, "http://")
+            "https://corsproxy.io/?" + encodeURIComponent(wfsUrl)
           ];
           let loaded = false;
           for (const u of urls) {
             try {
               const res = await fetch(u, { cache: "no-store", credentials: "omit" });
+              if (!res.ok) continue;
               const txt = await res.text();
               const gj = JSON.parse(txt);
               if (gj && gj.features) {
@@ -349,6 +395,7 @@ basemapGallery.watch("activeBasemap", () => {
               loaded = true;
             } catch (e) {
               console.warn("CriOS fallback GeoJSONLayer falhou:", e);
+              showError("Falha ao carregar dados. Verifique a conexão.");
             }
           }
           loadingMessage.classList.add("hidden");
@@ -357,6 +404,10 @@ basemapGallery.watch("activeBasemap", () => {
         // Original path for all other browsers
         loadWFS()
           .catch(() => fallbackGeoJSON())
+          .catch(e => {
+            console.error("All data loading methods failed:", e);
+            showError("Não foi possível carregar os dados. Tente novamente mais tarde.");
+          })
           .finally(() => loadingMessage.classList.add("hidden"));
       }
 
@@ -447,26 +498,33 @@ basemapGallery.watch("activeBasemap", () => {
       });
 
       applyFilter.addEventListener("click", function () {
-        const distrito = distritoFilter.value;
-        const concelho = concelhoFilter.value;
-        pointsLayer.removeAll();
-        filteredPointsLayer.removeAll();
-        for (const g of allPoints) {
-          const a = g.attributes || {};
-          const matchD = !distrito || a.distrito === distrito;
-          const matchC = !concelho || a.concelho === concelho;
-          if (matchD && matchC) {
-            const fg = g.clone();
-            fg.symbol = filteredPointSymbol;
-            filteredPointsLayer.add(fg);
+        filterLoading.classList.remove("hidden");
+        
+        // Use setTimeout to allow the UI to update before heavy processing
+        setTimeout(() => {
+          const distrito = distritoFilter.value;
+          const concelho = concelhoFilter.value;
+          pointsLayer.removeAll();
+          filteredPointsLayer.removeAll();
+          for (const g of allPoints) {
+            const a = g.attributes || {};
+            const matchD = !distrito || a.distrito === distrito;
+            const matchC = !concelho || a.concelho === concelho;
+            if (matchD && matchC) {
+              const fg = g.clone();
+              fg.symbol = filteredPointSymbol;
+              filteredPointsLayer.add(fg);
+            }
           }
-        }
-        // Zoom to filtered graphics if any and refresh nearest box
-        const sel = filteredPointsLayer.graphics.items;
-        if (sel.length) {
-          fitToGraphics(sel, 60);
-        }
-        if (view.center) findNearest(view.center);
+          // Zoom to filtered graphics if any and refresh nearest box
+          const sel = filteredPointsLayer.graphics.items;
+          if (sel.length) {
+            fitToGraphics(sel, 60);
+          }
+          if (view.center) findNearest(view.center);
+          
+          filterLoading.classList.add("hidden");
+        }, 100);
       });
 
       resetFilter.addEventListener("click", function () {
@@ -511,7 +569,7 @@ basemapGallery.watch("activeBasemap", () => {
           panel.style.maxHeight = "50%";
           panel.style.opacity = "1";
           panel.style.transform = "translateY(0)";
-          btn.textContent = "◀";
+          btn.textContent = btn.id === "toggleInfo" ? "📋" : "⚙️";
         } else {
           panel.dataset.state = "collapsed";
           panel.style.maxHeight = "24px";
@@ -529,10 +587,9 @@ basemapGallery.watch("activeBasemap", () => {
         togglePanel(filterPanel, toggleFilter);
       }
 
-      // Hamburger toggle for filter panel
       // Throttled & debounced nearest computation for better perf on Chrome mobile
       let lastMove = 0;
-      const MOVE_THROTTLE_MS = 100;
+      const MOVE_THROTTLE_MS = 200; // Increased from 100ms to 200ms for better mobile performance
       function onMove(e){
         const now = performance.now();
         if (now - lastMove < MOVE_THROTTLE_MS) return;
@@ -555,12 +612,38 @@ basemapGallery.watch("activeBasemap", () => {
       }
       const centerWatchHandler = debounce(() => {
         if (view.center) findNearest(view.center);
-      }, 200);
+      }, 300); // Increased from 200ms to 300ms for better mobile performance
 
       view.watch("center", centerWatchHandler);
       view.watch("stationary", (s) => { if (s && view.center) findNearest(view.center); });
       view.on("click", (e) => { const pt = view.toMap(e); if (pt) findNearest(pt); });
 
+      // Optimized distance calculation with spatial partitioning for better mobile performance
+      let spatialGrid = {};
+      
+      function buildSpatialGrid(points, gridSize = 0.5) {
+        // Clear previous grid
+        spatialGrid = {};
+        
+        for (const point of points) {
+          const geom = point.geometry;
+          if (!geom) continue;
+          
+          const lon = geom.longitude;
+          const lat = geom.latitude;
+          
+          const gridX = Math.floor(lon / gridSize);
+          const gridY = Math.floor(lat / gridSize);
+          const gridKey = `${gridX},${gridY}`;
+          
+          if (!spatialGrid[gridKey]) {
+            spatialGrid[gridKey] = [];
+          }
+          
+          spatialGrid[gridKey].push(point);
+        }
+      }
+      
       function metersDistance(a, b) {
         // Pure Haversine (geodesic) to avoid geometry engine issues
         const R = 6371000;
@@ -576,12 +659,45 @@ basemapGallery.watch("activeBasemap", () => {
         if (!allPoints.length) return;
         linesLayer.removeAll();
 
-        // Precompute simple list to reduce overhead
+        // Use spatial grid for faster searching on mobile
+        if (Object.keys(spatialGrid).length === 0) {
+          buildSpatialGrid(allPoints);
+        }
+
         const active = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : allPoints;
-        const candidates = active.map(g => ({
-          feature: g,
-          distance: metersDistance(pt, g.geometry)
-        }));
+        
+        // First check the grid cell where the point is located and adjacent cells
+        const gridSize = 0.5;
+        const gridX = Math.floor(pt.longitude / gridSize);
+        const gridY = Math.floor(pt.latitude / gridSize);
+        
+        let candidates = [];
+        const searchRadius = 2; // Check adjacent cells in a 5x5 grid
+        
+        for (let x = gridX - searchRadius; x <= gridX + searchRadius; x++) {
+          for (let y = gridY - searchRadius; y <= gridY + searchRadius; y++) {
+            const gridKey = `${x},${y}`;
+            if (spatialGrid[gridKey]) {
+              for (const g of spatialGrid[gridKey]) {
+                // Only include points that are in the active set
+                if (active.includes(g)) {
+                  candidates.push({
+                    feature: g,
+                    distance: metersDistance(pt, g.geometry)
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // If we didn't find enough points in the nearby grid cells, fall back to full search
+        if (candidates.length < 4) {
+          candidates = active.map(g => ({
+            feature: g,
+            distance: metersDistance(pt, g.geometry)
+          }));
+        }
 
         nearest = candidates
           .filter(o => o.distance <= 10000)
@@ -615,9 +731,17 @@ basemapGallery.watch("activeBasemap", () => {
         infoContent.innerHTML = html;
       }
 
+      // Build spatial grid when data is loaded
+      setTimeout(() => {
+        if (allPoints.length > 0) {
+          buildSpatialGrid(allPoints);
+        }
+      }, 2000);
+
       // Robust error reporting (in case both loaders fail)
       window.addEventListener("unhandledrejection", (e) => {
         console.warn("Unhandled rejection:", e.reason);
+        showError("Ocorreu um erro inesperado. Recarregue a página.");
       });
     });
   </script>
