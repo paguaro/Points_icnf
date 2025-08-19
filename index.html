@@ -157,6 +157,7 @@
       "esri/Graphic",
       "esri/geometry/Point",
       "esri/geometry/Polyline",
+      "esri/geometry/Extent",
       "esri/geometry/geometryEngine",
       "esri/symbols/SimpleMarkerSymbol",
       "esri/symbols/SimpleLineSymbol",
@@ -165,22 +166,18 @@
       "esri/widgets/Search",
       "esri/request",
       "esri/layers/GeoJSONLayer"
-    ], function(esriConfig, Map, MapView, GraphicsLayer, Graphic, Point, Polyline, geometryEngine, SimpleMarkerSymbol, SimpleLineSymbol, BasemapGallery, Expand, Search, esriRequest, GeoJSONLayer) {
+    ], function(esriConfig, Map, MapView, GraphicsLayer, Graphic, Point, Polyline, Extent, geometryEngine, SimpleMarkerSymbol, SimpleLineSymbol, BasemapGallery, Expand, Search, esriRequest, GeoJSONLayer) {
 
       // Improve CORS compatibility for Chrome (defensive guards for 'push' on undefined)
       try {
         esriConfig.request = esriConfig.request || {};
-        esriConfig.request.corsEnabledServers = esriConfig.request.corsEnabledServers || [];
-        if (Array.isArray(esriConfig.request.corsEnabledServers)) {
-          // add both host and full origin just in case
-          if (!esriConfig.request.corsEnabledServers.includes("si.icnf.pt")) {
-            esriConfig.request.corsEnabledServers.push("si.icnf.pt");
-          }
-          if (!esriConfig.request.corsEnabledServers.includes("https://si.icnf.pt")) {
-            esriConfig.request.corsEnabledServers.push("https://si.icnf.pt");
-          }
+        esriConfig.request.corsEnabledServers = Array.isArray(esriConfig.request.corsEnabledServers) ? esriConfig.request.corsEnabledServers : [];
+        esriConfig.request.trustedServers = Array.isArray(esriConfig.request.trustedServers) ? esriConfig.request.trustedServers : [];
+        for (const host of ["si.icnf.pt", "https://si.icnf.pt"]) {
+          if (!esriConfig.request.corsEnabledServers.includes(host)) esriConfig.request.corsEnabledServers.push(host);
+          if (!esriConfig.request.trustedServers.includes(host)) esriConfig.request.trustedServers.push(host);
         }
-        esriConfig.request.timeout = 15000; // 15s
+        esriConfig.request.timeout = 20000; // 20s
       } catch (e) {
         console.warn("CORS list init failed:", e);
       }
@@ -251,6 +248,8 @@
           expandTooltip: "Mudar mapa base"
         });
         view.ui.add(bgExpand, "bottom-right");
+        // Auto-close basemap after selection
+        basemapGallery.watch("activeBasemap", () => { bgExpand.expanded = false; });
 		// Chiudi automaticamente il widget dopo la selezione della mappa
 basemapGallery.watch("activeBasemap", () => {
   bgExpand.expanded = false;
@@ -427,7 +426,7 @@ basemapGallery.watch("activeBasemap", () => {
         // Zoom to filtered graphics if any and refresh nearest box
         const sel = filteredPointsLayer.graphics.items;
         if (sel.length) {
-          view.goTo({ target: sel, padding: 40 }).catch(() => {});
+          fitToGraphics(sel, 60);
         }
         if (view.center) findNearest(view.center);
       });
@@ -441,10 +440,30 @@ basemapGallery.watch("activeBasemap", () => {
         for (const g of allPoints) pointsLayer.add(g);
         const all = pointsLayer.graphics.items;
         if (all.length) {
-          view.goTo({ target: all, padding: 40 }).catch(() => {});
+          fitToGraphics(all, 60);
         }
         if (view.center) findNearest(view.center);
       });
+
+      
+      function fitToGraphics(graphics, padding = 40) {
+        if (!graphics || !graphics.length) return;
+        let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
+        for (const g of graphics) {
+          const geom = g.geometry;
+          if (!geom) continue;
+          const x = geom.longitude ?? geom.x;
+          const y = geom.latitude ?? geom.y;
+          if (typeof x !== 'number' || typeof y !== 'number') continue;
+          if (x < xmin) xmin = x;
+          if (y < ymin) ymin = y;
+          if (x > xmax) xmax = x;
+          if (y > ymax) ymax = y;
+        }
+        if (!isFinite(xmin) || !isFinite(ymin) || !isFinite(xmax) || !isFinite(ymax)) return;
+        const ext = new Extent({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 4326 } });
+        view.goTo({ target: ext, padding }).catch(() => {});
+      }
 
       // Panels collapse/expand
       function togglePanel(panel, btn) {
