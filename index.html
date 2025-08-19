@@ -424,6 +424,12 @@ basemapGallery.watch("activeBasemap", () => {
             filteredPointsLayer.add(fg);
           }
         }
+        // Zoom to filtered graphics if any and refresh nearest box
+        const sel = filteredPointsLayer.graphics.items;
+        if (sel.length) {
+          view.goTo({ target: sel, padding: 40 }).catch(() => {});
+        }
+        if (view.center) findNearest(view.center);
       });
 
       resetFilter.addEventListener("click", function () {
@@ -433,6 +439,11 @@ basemapGallery.watch("activeBasemap", () => {
         pointsLayer.removeAll();
         filteredPointsLayer.removeAll();
         for (const g of allPoints) pointsLayer.add(g);
+        const all = pointsLayer.graphics.items;
+        if (all.length) {
+          view.goTo({ target: all, padding: 40 }).catch(() => {});
+        }
+        if (view.center) findNearest(view.center);
       });
 
       // Panels collapse/expand
@@ -474,6 +485,7 @@ basemapGallery.watch("activeBasemap", () => {
       }
       view.on("pointer-move", onMove);
       view.on("pointer-down", onMove);
+      view.on("pointer-up", onMove);
       view.on("drag", (e) => {
         // while dragging, recompute using center to ensure feedback
         const pt = view.center && view.center.clone();
@@ -515,7 +527,7 @@ basemapGallery.watch("activeBasemap", () => {
         }));
 
         nearest = candidates
-          .filter(o => o.distance <= 50000)
+          .filter(o => o.distance <= 10000)
           .sort((a, b) => a.distance - b.distance)
           .slice(0, 4);
 
