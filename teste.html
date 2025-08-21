@@ -17,7 +17,7 @@
       line-height: 1.2;
     }
 
-    #infoPanel, #filterPanel, #firePanel {
+    #infoPanel, #filterPanel {
       position: absolute;
       background: #fff;
       padding: 6px 8px;
@@ -33,13 +33,6 @@
     }
     #infoPanel { top: 110px; right: 10px; width: min(260px, 42vw); }
     #filterPanel { top: 130px; left: 10px; width: min(160px, 28vw); overflow: hidden; }
-    #firePanel { 
-      top: 170px; 
-      right: 10px; 
-      width: min(300px, 50vw); 
-      max-height: 60%; 
-      display: none; 
-    }
 
     .toggle-chip {
       position: absolute;
@@ -168,95 +161,6 @@
       100% { transform: rotate(360deg); }
     }
 
-    #fireHeader {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-      padding-bottom: 4px;
-      border-bottom: 1px solid #eee;
-    }
-    
-    #fireControls {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    
-    .fire-control-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    
-    .fire-control-row label {
-      font-size: 12px;
-      white-space: nowrap;
-    }
-    
-    .fire-control-row select {
-      flex: 1;
-    }
-    
-    #firePlayer {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-top: 8px;
-    }
-    
-    #fireDateDisplay {
-      font-size: 12px;
-      text-align: center;
-      margin-top: 8px;
-      font-weight: bold;
-    }
-    
-    #fireProgress {
-      flex: 1;
-      height: 6px;
-      background: #eee;
-      border-radius: 3px;
-      overflow: hidden;
-    }
-    
-    #fireProgressBar {
-      height: 100%;
-      background: #ff5722;
-      width: 0%;
-      transition: width 0.3s ease;
-    }
-    
-    .fire-player-btn {
-      background: none;
-      border: none;
-      font-size: 16px;
-      cursor: pointer;
-      color: #0079c1;
-      padding: 4px;
-    }
-    
-    .fire-legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 8px;
-      font-size: 10px;
-    }
-    
-    .legend-item {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-    }
-    
-    .legend-color {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-
     #corsWarning {
       position: absolute;
       top: 50%;
@@ -272,6 +176,19 @@
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
       display: none;
     }
+
+    .fire-status {
+      position: absolute;
+      top: 60px;
+      right: 10px;
+      background: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-size: 12px;
+      z-index: 10;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -279,7 +196,7 @@
   <div id="infoPanel" aria-live="polite">
     <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
     <div id="infoContent"></div>
-    <button id="toggleFirePanel" title="Mostrar dados de incêndios">🔥</button>
+    <button id="toggleFirePanel" title="Ativar/Desativar dados de incêndios">🔥</button>
   </div>
 
   <div id="filterPanel">
@@ -298,54 +215,7 @@
     <div id="filterLoading" class="filter-loading hidden"></div>
   </div>
 
-  <div id="firePanel">
-    <div id="fireHeader">
-      <h3 style="margin: 0; font-size: 14px;">Atividade de Incêndios</h3>
-      <button id="closeFirePanel" class="fire-player-btn" title="Fechar">✕</button>
-    </div>
-    <div id="fireControls">
-      <div class="fire-control-row">
-        <label for="fireRegion">Região:</label>
-        <select id="fireRegion">
-          <option value="iberian_peninsula">Península Ibérica</option>
-          <option value="europe">Europa</option>
-          <option value="global">Global</option>
-        </select>
-      </div>
-      <div class="fire-control-row">
-        <label for="fireDays">Dias a mostrar:</label>
-        <select id="fireDays">
-          <option value="3">3 dias</option>
-          <option value="5" selected>5 dias</option>
-          <option value="7">7 dias</option>
-          <option value="10">10 dias</option>
-        </select>
-      </div>
-    </div>
-    <div id="fireDateDisplay">Carregando dados...</div>
-    <div id="firePlayer">
-      <button id="firePrev" class="fire-player-btn" title="Dia anterior">⏮</button>
-      <button id="firePlayPause" class="fire-player-btn" title="Reproduzir/Pausar">▶</button>
-      <button id="fireNext" class="fire-player-btn" title="Próximo dia">⏭</button>
-      <div id="fireProgress">
-        <div id="fireProgressBar"></div>
-      </div>
-    </div>
-    <div class="fire-legend">
-      <div class="legend-item">
-        <div class="legend-color" style="background-color: #ffeb3b;"></div>
-        <span>Baixa intensidade</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background-color: #ff9800;"></div>
-        <span>Média intensidade</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-color" style="background-color: #f44336;"></div>
-        <span>Alta intensidade</span>
-      </div>
-    </div>
-  </div>
+  <div id="fireStatus" class="fire-status">Dados de incêndio ativos</div>
 
   <div id="loadingMessage">
     <div id="loadingBox">A carregar dados WFS…</div>
@@ -382,7 +252,7 @@
       "esri/layers/FeatureLayer"
     ], function(esriConfig, Map, MapView, GraphicsLayer, Graphic, Point, Polyline, Extent, geometryEngine, SimpleMarkerSymbol, SimpleLineSymbol, BasemapGallery, Expand, Search, esriRequest, GeoJSONLayer, FeatureLayer) {
 
-      // Configurazione CORS migliorata
+      // Configurazione CORS
       try {
         esriConfig.request = esriConfig.request || {};
         esriConfig.request.corsEnabledServers = esriConfig.request.corsEnabledServers || [];
@@ -419,8 +289,7 @@
       const linesLayer = new GraphicsLayer();
       const filteredPointsLayer = new GraphicsLayer();
       const locationLayer = new GraphicsLayer();
-      const fireLayer = new GraphicsLayer();
-      map.addMany([pointsLayer, linesLayer, filteredPointsLayer, locationLayer, fireLayer]);
+      map.addMany([pointsLayer, linesLayer, filteredPointsLayer, locationLayer]);
 
       // UI refs
       const infoPanel = document.getElementById("infoPanel");
@@ -438,15 +307,7 @@
       
       // Fire panel elements
       const toggleFirePanel = document.getElementById("toggleFirePanel");
-      const firePanel = document.getElementById("firePanel");
-      const closeFirePanel = document.getElementById("closeFirePanel");
-      const fireRegion = document.getElementById("fireRegion");
-      const fireDays = document.getElementById("fireDays");
-      const fireDateDisplay = document.getElementById("fireDateDisplay");
-      const firePrev = document.getElementById("firePrev");
-      const firePlayPause = document.getElementById("firePlayPause");
-      const fireNext = document.getElementById("fireNext");
-      const fireProgressBar = document.getElementById("fireProgressBar");
+      const fireStatus = document.getElementById("fireStatus");
 
       // State
       let allPoints = [];
@@ -455,10 +316,8 @@
       const distritoConcelhoMap = {};
       
       // Fire data state
-      let fireData = [];
-      let currentFireDateIndex = 0;
-      let fireAnimationInterval = null;
-      let isFirePanelOpen = false;
+      let fireLayer = null;
+      let isFireLayerActive = false;
 
       // Symbols
       const waterPointSymbol = new SimpleMarkerSymbol({
@@ -480,25 +339,6 @@
         color: [255, 0, 0, 0.6],
         width: 1.5,
         style: "short-dash"
-      });
-      
-      // Fire symbols based on intensity (frp)
-      const lowFireSymbol = new SimpleMarkerSymbol({
-        color: [255, 235, 59, 0.7],
-        outline: { color: [255, 255, 255, 0.8], width: 1 },
-        size: 6
-      });
-      
-      const mediumFireSymbol = new SimpleMarkerSymbol({
-        color: [255, 152, 0, 0.7],
-        outline: { color: [255, 255, 255, 0.8], width: 1 },
-        size: 8
-      });
-      
-      const highFireSymbol = new SimpleMarkerSymbol({
-        color: [244, 67, 54, 0.7],
-        outline: { color: [255, 255, 255, 0.8], width: 1 },
-        size: 10
       });
 
       // Error handling function
@@ -584,7 +424,7 @@
       // WFS — use EPSG:4326 to avoid client projection & improve Chrome compatibility
       const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
-      // Fire service URL - CORRETTO
+      // Fire service URL
       const fireServiceUrl = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0";
 
       // iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use multi-route plain fetch only there.
@@ -820,25 +660,23 @@
       toggleInfo.addEventListener("click", () => togglePanel(infoPanel, toggleInfo));
       toggleFilter.addEventListener("click", () => togglePanel(filterPanel, toggleFilter));
       
-      // Fire panel toggle
+      // Fire layer toggle
       toggleFirePanel.addEventListener("click", () => {
-        if (isFirePanelOpen) {
-          firePanel.style.display = "none";
-          isFirePanelOpen = false;
-        } else {
-          firePanel.style.display = "block";
-          isFirePanelOpen = true;
-          // Load fire data if not already loaded
-          if (fireData.length === 0) {
-            loadFireData();
+        if (isFireLayerActive) {
+          // Remove fire layer
+          if (fireLayer) {
+            map.remove(fireLayer);
           }
+          isFireLayerActive = false;
+          fireStatus.style.display = 'none';
+          toggleFirePanel.style.backgroundColor = '#f2f2f2';
+        } else {
+          // Add fire layer
+          loadFireLayer();
+          isFireLayerActive = true;
+          fireStatus.style.display = 'block';
+          toggleFirePanel.style.backgroundColor = '#ffcccb';
         }
-      });
-      
-      closeFirePanel.addEventListener("click", () => {
-        firePanel.style.display = "none";
-        isFirePanelOpen = false;
-        stopFireAnimation();
       });
       
       // Start collapsed on small screens
@@ -999,339 +837,78 @@
         }
       }, 2000);
 
-      // Fire data functions - MODIFICATO per gestire CORS
-      function loadFireData() {
-        fireDateDisplay.textContent = "Carregando dados de incêndios...";
-        
+      // Fire layer functions - Versione semplificata
+      function loadFireLayer() {
         // Mostra avviso CORS se siamo su GitHub Pages
         if (window.location.hostname.includes('github.io')) {
           document.getElementById('corsWarning').style.display = 'block';
         }
         
-        // Define query based on selected region
-        const region = fireRegion.value;
-        let geometry = null;
-        let where = "1=1";
-        
-        // Set spatial filter based on region
-        if (region === "iberian_peninsula") {
-          geometry = {
-            xmin: -9.5, ymin: 36, xmax: 3.3, ymax: 43.8,
-            spatialReference: { wkid: 4326 }
-          };
-        } else if (region === "europe") {
-          geometry = {
-            xmin: -25, ymin: 35, xmax: 40, ymax: 71,
-            spatialReference: { wkid: 4326 }
-          };
-        }
-        
-        // Calculate date range (last X days)
-        const daysToShow = parseInt(fireDays.value);
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - daysToShow);
-        
-        const startDateStr = formatDateForQuery(startDate);
-        const endDateStr = formatDateForQuery(endDate);
-        
-        where = `acq_date >= '${startDateStr}' AND acq_date <= '${endDateStr}'`;
-        
-        // Create feature layer with query - MODIFICATO per gestire CORS
-        const layer = new FeatureLayer({
+        // Crea il layer dei fuochi direttamente dal servizio
+        fireLayer = new FeatureLayer({
           url: fireServiceUrl,
-          definitionExpression: where,
-          outFields: ["*"]
-        });
-        
-        // Query features - MODIFICATO per gestire CORS
-        const query = layer.createQuery();
-        if (geometry) {
-          query.geometry = geometry;
-        }
-        query.outFields = ["*"];
-        query.returnGeometry = true;
-        query.where = where;
-        
-        // Usa una richiesta diretta per evitare problemi CORS
-        const queryUrl = `${fireServiceUrl}/query?f=json&where=${encodeURIComponent(where)}&outFields=*&returnGeometry=true`;
-        
-        // Prova prima con una richiesta standard
-        fetch(queryUrl, {
-          mode: 'cors',
-          credentials: 'omit'
-        })
-        .then(response => {
-          if (!response.ok) throw new Error('Network response was not ok');
-          return response.json();
-        })
-        .then(data => {
-          if (data.error) {
-            throw new Error(data.error.message);
-          }
-          processFireData(data.features);
-        })
-        .catch(error => {
-          console.error("Error loading fire data:", error);
-          fireDateDisplay.textContent = "Erro ao carregar dados";
-          showError("Não foi possível carregar dados de incêndios. Problema de CORS.");
-          
-          // Prova con un proxy CORS alternativo
-          tryWithCorsProxy(queryUrl);
-        });
-      }
-      
-      function formatDateForQuery(date) {
-        // Formatta la data nel formato YYYY-MM-DD per la query
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      }
-      
-      function tryWithCorsProxy(queryUrl) {
-        // Usa un proxy CORS come ultima risorsa
-        const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(queryUrl);
-        
-        fetch(proxyUrl, {
-          credentials: 'omit'
-        })
-        .then(response => {
-          if (!response.ok) throw new Error('Proxy response was not ok');
-          return response.json();
-        })
-        .then(data => {
-          if (data.error) {
-            throw new Error(data.error.message);
-          }
-          processFireData(data.features);
-        })
-        .catch(error => {
-          console.error("Error loading fire data with proxy:", error);
-          fireDateDisplay.textContent = "Falha ao carregar mesmo com proxy";
-          showError("Falha completa ao carregar dados de incêndios.");
-        });
-      }
-      
-      function processFireData(features) {
-        if (!features || !Array.isArray(features)) {
-          console.error("Invalid features data:", features);
-          fireDateDisplay.textContent = "Dados de incêndio inválidos";
-          return;
-        }
-        
-        // Group fires by date
-        const firesByDate = {};
-        
-        features.forEach((feature) => {
-          const attributes = feature.attributes;
-          const geometry = feature.geometry;
-          
-          if (!attributes || !geometry) return;
-          
-          const date = attributes.acq_date;
-          if (!date) return;
-          
-          if (!firesByDate[date]) {
-            firesByDate[date] = [];
-          }
-          
-          // Create graphic for fire point - MODIFICATO per gestire geometria corretta
-          let point;
-          if (geometry.x && geometry.y) {
-            point = new Point({
-              x: geometry.x,
-              y: geometry.y,
-              spatialReference: geometry.spatialReference || { wkid: 4326 }
-            });
-          } else if (geometry.longitude && geometry.latitude) {
-            point = new Point({
-              longitude: geometry.longitude,
-              latitude: geometry.latitude,
-              spatialReference: geometry.spatialReference || { wkid: 4326 }
-            });
-          } else if (geometry.points && geometry.points.length > 0) {
-            // Gestione per geometrie multipunto
-            point = new Point({
-              x: geometry.points[0][0],
-              y: geometry.points[0][1],
-              spatialReference: geometry.spatialReference || { wkid: 4326 }
-            });
-          } else {
-            return; // Skip if no valid geometry
-          }
-          
-          // Choose symbol based on intensity (frp)
-          let symbol = lowFireSymbol;
-          const frp = attributes.frp || 0;
-          if (frp > 50) symbol = highFireSymbol;
-          else if (frp > 10) symbol = mediumFireSymbol;
-          
-          firesByDate[date].push(new Graphic({
-            geometry: point,
-            attributes: attributes,
-            symbol: symbol,
-            popupTemplate: {
-              title: "Incêndio {acq_date}",
-              content: function(event) {
-                const g = event.graphic;
-                const attrs = g.attributes || {};
-                return `
-                  <div>
-                    <p><strong>Data:</strong> ${attrs.acq_date || 'N/A'}</p>
-                    <p><strong>Hora:</strong> ${attrs.acq_time || 'N/A'}</p>
-                    <p><strong>Intensidade (FRP):</strong> ${attrs.frp || 'N/A'} MW</p>
-                    <p><strong>Confiança:</strong> ${attrs.confidence || 'N/A'}%</p>
-                    <p><strong>Satélite:</strong> ${attrs.satellite || 'N/A'}</p>
-                  </div>
-                `;
-              }
+          title: "Incêndios VIIRS",
+          outFields: ["*"],
+          popupTemplate: {
+            title: "Incêndio {acq_date}",
+            content: function(event) {
+              const g = event.graphic;
+              const attrs = g.attributes || {};
+              return `
+                <div>
+                  <p><strong>Data:</strong> ${attrs.acq_date || 'N/A'}</p>
+                  <p><strong>Hora:</strong> ${attrs.acq_time || 'N/A'}</p>
+                  <p><strong>Intensidade (FRP):</strong> ${attrs.frp || 'N/A'} MW</p>
+                  <p><strong>Confiança:</strong> ${attrs.confidence || 'N/A'}%</p>
+                  <p><strong>Satélite:</strong> ${attrs.satellite || 'N/A'}</p>
+                </div>
+              `;
             }
-          }));
-        });
-        
-        // Convert to array and sort by date
-        fireData = Object.entries(firesByDate)
-          .map(([date, graphics]) => ({ date, graphics }))
-          .sort((a, b) => new Date(a.date) - new Date(b.date));
-        
-        if (fireData.length > 0) {
-          currentFireDateIndex = fireData.length - 1; // Start with most recent
-          showFireDataForCurrentDate();
-          setupFirePlayerControls();
-        } else {
-          fireDateDisplay.textContent = "Nenhum dado de incêndio encontrado";
-        }
-      }
-      
-      function showFireDataForCurrentDate() {
-        fireLayer.removeAll();
-        
-        if (fireData.length === 0) return;
-        
-        const currentDateData = fireData[currentFireDateIndex];
-        
-        // CORREZIONE: Formatta correttamente la data
-        const formattedDate = formatFireDate(currentDateData.date);
-        fireDateDisplay.textContent = `Incêndios em ${formattedDate}`;
-        
-        // Add graphics to layer
-        fireLayer.addMany(currentDateData.graphics);
-        
-        // Update progress bar
-        const progress = ((currentFireDateIndex + 1) / fireData.length) * 100;
-        fireProgressBar.style.width = `${progress}%`;
-      }
-      
-      function formatFireDate(dateStr) {
-        // CORREZIONE: Gestione robusta della formattazione della data
-        if (!dateStr) return "Data desconhecida";
-        
-        try {
-          // Prova diversi formati di data
-          let date;
-          
-          if (dateStr.includes('/')) {
-            // Formato DD/MM/YYYY o MM/DD/YYYY
-            const parts = dateStr.split('/');
-            if (parts.length === 3) {
-              // Assumi formato YYYY/MM/DD o DD/MM/YYYY
-              if (parts[0].length === 4) {
-                // Formato YYYY/MM/DD
-                date = new Date(parts[0], parts[1] - 1, parts[2]);
-              } else {
-                // Formato DD/MM/YYYY
-                date = new Date(parts[2], parts[1] - 1, parts[0]);
+          },
+          renderer: {
+            type: "simple",
+            symbol: {
+              type: "simple-marker",
+              color: [255, 0, 0, 0.7],
+              outline: {
+                color: [255, 255, 255, 0.8],
+                width: 1
+              },
+              size: 8
+            },
+            visualVariables: [
+              {
+                type: "size",
+                field: "frp",
+                stops: [
+                  { value: 0, size: 6 },
+                  { value: 10, size: 8 },
+                  { value: 50, size: 12 }
+                ]
+              },
+              {
+                type: "color",
+                field: "frp",
+                stops: [
+                  { value: 0, color: [255, 235, 59, 0.7] },   // Giallo per bassa intensità
+                  { value: 10, color: [255, 152, 0, 0.7] },   // Arancione per media intensità
+                  { value: 50, color: [244, 67, 54, 0.7] }    // Rosso per alta intensità
+                ]
               }
-            }
-          } else if (dateStr.includes('-')) {
-            // Formato YYYY-MM-DD
-            date = new Date(dateStr);
-          } else {
-            // Prova a parsare direttamente
-            date = new Date(dateStr);
-          }
-          
-          // Verifica se la data è valida
-          if (isNaN(date.getTime())) {
-            return dateStr; // Ritorna la stringa originale se non può essere parsata
-          }
-          
-          return date.toLocaleDateString('pt-PT');
-        } catch (e) {
-          console.error("Error formatting date:", e, dateStr);
-          return dateStr; // Ritorna la stringa originale in caso di errore
-        }
-      }
-      
-      function setupFirePlayerControls() {
-        // Previous button
-        firePrev.addEventListener("click", () => {
-          stopFireAnimation();
-          if (currentFireDateIndex > 0) {
-            currentFireDateIndex--;
-            showFireDataForCurrentDate();
+            ]
           }
         });
         
-        // Next button
-        fireNext.addEventListener("click", () => {
-          stopFireAnimation();
-          if (currentFireDateIndex < fireData.length - 1) {
-            currentFireDateIndex++;
-            showFireDataForCurrentDate();
+        // Aggiungi il layer alla mappa
+        map.add(fireLayer);
+        
+        // Gestisci gli errori del layer
+        fireLayer.watch("loadStatus", function(status) {
+          if (status === "failed") {
+            showError("Falha ao carregar dados de incêndios. Problema de CORS.");
+            fireStatus.textContent = "Erro ao carregar dados de incêndio";
           }
         });
-        
-        // Play/Pause button
-        firePlayPause.addEventListener("click", () => {
-          if (fireAnimationInterval) {
-            stopFireAnimation();
-            firePlayPause.innerHTML = "▶";
-            firePlayPause.title = "Reproduzir";
-          } else {
-            startFireAnimation();
-            firePlayPause.innerHTML = "⏸";
-            firePlayPause.title = "Pausar";
-          }
-        });
-        
-        // Region change
-        fireRegion.addEventListener("change", () => {
-          stopFireAnimation();
-          fireData = [];
-          loadFireData();
-        });
-        
-        // Days change
-        fireDays.addEventListener("change", () => {
-          stopFireAnimation();
-          fireData = [];
-          loadFireData();
-        });
-      }
-      
-      function startFireAnimation() {
-        stopFireAnimation();
-        
-        fireAnimationInterval = setInterval(() => {
-          if (currentFireDateIndex < fireData.length - 1) {
-            currentFireDateIndex++;
-            showFireDataForCurrentDate();
-          } else {
-            // Reached the end, stop animation
-            stopFireAnimation();
-            firePlayPause.innerHTML = "▶";
-            firePlayPause.title = "Reproduzir";
-          }
-        }, 1500); // 1.5 seconds per frame
-      }
-      
-      function stopFireAnimation() {
-        if (fireAnimationInterval) {
-          clearInterval(fireAnimationInterval);
-          fireAnimationInterval = null;
-        }
       }
 
       // Robust error reporting (in case both loaders fail)
