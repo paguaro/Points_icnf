@@ -50,16 +50,13 @@
 
     #toggleFirePanel {
       position: absolute;
-      top: 60px; /* Spostata sotto il pannello info */
-      right: 10px;
-      background: #f2f2f2;
-      border: 1px solid #ddd;
+      top: 10px; /* Posizione accanto al GPS */
+      right: 50px; /* Distanza di 20px dal GPS */
+      background: transparent; /* Senza cornice */
+      border: none;
       cursor: pointer;
-      border-radius: 6px;
-      padding: 6px 8px;
-      font-size: 14px;
-      line-height: 1.1;
-      user-select: none;
+      font-size: 20px;
+      padding: 5px;
       z-index: 10;
     }
 
@@ -199,7 +196,7 @@
     <div id="infoContent"></div>
   </div>
 
-  <button id="toggleFirePanel" title="Ativar/Desativar dados de incêndios">🔥 Incêndios</button>
+  <button id="toggleFirePanel" title="Ativar/Desativar dados de incêndios">🔥</button>
 
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
@@ -380,6 +377,14 @@
         rightGroup.appendChild(locateBtn);
         view.ui.add(rightGroup, { position: "top-right", index: 0 });
 
+        // Aggiungi il pulsante fuoco al gruppo destro
+        const fireBtn = document.createElement("button");
+        fireBtn.innerHTML = "🔥";
+        fireBtn.title = "Ativar/Desativar dados de incêndios";
+        fireBtn.className = "btn-ghost";
+        fireBtn.addEventListener("click", () => toggleFirePanel.click());
+        rightGroup.appendChild(fireBtn);
+        
         // Left group: reset extent under zoom
         const leftGroup = document.createElement("div");
         leftGroup.className = "custom-ui";
@@ -427,7 +432,7 @@
       // WFS — use EPSG:4326 to avoid client projection & improve Chrome compatibility
       const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
-      // Fire service URL
+      // Fire service URL con proxy CORS
       const fireServiceUrl = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0";
 
       // iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use multi-route plain fetch only there.
@@ -673,13 +678,13 @@
           }
           isFireLayerActive = false;
           fireStatus.style.display = 'none';
-          toggleFirePanel.style.backgroundColor = '#f2f2f2';
+          toggleFirePanel.style.backgroundColor = 'transparent';
         } else {
           // Add fire layer
           loadFireLayer();
           isFireLayerActive = true;
           fireStatus.style.display = 'block';
-          toggleFirePanel.style.backgroundColor = '#ffcccb';
+          toggleFirePanel.style.backgroundColor = 'rgba(255, 204, 203, 0.5)';
         }
       });
       
@@ -848,9 +853,13 @@
           document.getElementById('corsWarning').style.display = 'block';
         }
         
-        // Crea il layer dei fuochi direttamente dal servizio
+        // Usa un proxy CORS per evitare problemi
+        const proxyUrl = "https://corsproxy.io/?";
+        const fireServiceProxyUrl = proxyUrl + encodeURIComponent(fireServiceUrl);
+        
+        // Crea il layer dei fuochi usando il proxy
         fireLayer = new FeatureLayer({
-          url: fireServiceUrl,
+          url: fireServiceProxyUrl,
           title: "Incêndios VIIRS",
           outFields: ["*"],
           // IMPORTANTE: disabilita la popup per evitare problemi con la geometria
@@ -881,13 +890,15 @@
             // Ripristina lo stato del pulsante
             isFireLayerActive = false;
             fireStatus.style.display = 'none';
-            toggleFirePanel.style.backgroundColor = '#f2f2f2';
+            toggleFirePanel.style.backgroundColor = 'transparent';
             
             // Rimuovi il layer fallito
             if (fireLayer) {
               map.remove(fireLayer);
               fireLayer = null;
             }
+          } else if (status === "loaded") {
+            fireStatus.textContent = "Dados de incêndio ativos";
           }
         });
       }
