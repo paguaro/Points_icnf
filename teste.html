@@ -7,206 +7,95 @@
   <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
 
   <style>
-    html, body, #viewDiv {
-      margin: 0; padding: 0; height: 100%; width: 100%;
-      -webkit-text-size-adjust: 100%;
-    }
+    html, body, #viewDiv { margin:0; padding:0; height:100%; width:100%; -webkit-text-size-adjust:100%; }
 
     .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select {
-      font-size: 12px;
-      line-height: 1.2;
+      font-size:12px; line-height:1.2;
     }
 
     #infoPanel, #filterPanel {
-      position: absolute;
-      background: #fff;
-      padding: 6px 8px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.15);
-      font-size: 8px;
-      z-index: 10;
-      max-height: 50%;
-      overflow-y: auto;
-      transition: max-height .25s ease, opacity .25s ease, transform .25s ease;
-      will-change: max-height, opacity, transform;
-      backdrop-filter: saturate(120%) blur(2px);
+      position:absolute; background:#fff; padding:6px 8px; border-radius:8px;
+      box-shadow:0 2px 10px rgba(0,0,0,.15); font-size:8px; z-index:10; max-height:50%;
+      overflow-y:auto; transition:max-height .25s ease, opacity .25s ease, transform .25s ease;
+      will-change:max-height, opacity, transform; backdrop-filter:saturate(120%) blur(2px);
     }
-    #infoPanel { top: 110px; right: 10px; width: min(260px, 42vw); }
-    #filterPanel { top: 130px; left: 10px; width: min(160px, 28vw); overflow: hidden; }
+    #infoPanel { top:110px; right:10px; width:min(260px,42vw); }
+    #filterPanel { top:130px; left:10px; width:min(160px,28vw); overflow:hidden; }
 
     .toggle-chip {
-      position: absolute;
-      top: 4px;
-      left: 4px;
-      background: #f2f2f2;
-      border: 1px solid #ddd;
-      cursor: pointer;
-      border-radius: 6px;
-      padding: 2px 6px;
-      font-size: 14px;
-      line-height: 1.1;
-      user-select: none;
+      position:absolute; top:4px; left:4px; background:#f2f2f2; border:1px solid #ddd;
+      cursor:pointer; border-radius:6px; padding:2px 6px; font-size:14px; line-height:1.1; user-select:none;
     }
 
+    /* Pulsante fuoco “nudo” */
     #toggleFirePanel {
-      position: absolute;
-      top: 10px;
-      right: 50px;
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      font-size: 20px;
-      padding: 5px;
-      z-index: 10;
+      position:absolute; top:10px; right:10px; background:transparent; border:none;
+      cursor:pointer; font-size:22px; padding:4px; z-index:11; line-height:1;
+      filter: grayscale(1) brightness(0.8); /* spento = grigio */
+      transition: filter .15s ease, transform .1s ease;
     }
+    #toggleFirePanel[aria-pressed="true"] {
+      filter: none; /* acceso = rosso naturale dell’emoji */
+    }
+    #toggleFirePanel:active { transform: scale(0.96); }
 
-    #loadingMessage {
-      position: absolute; inset: 0;
-      display: grid; place-items: center;
-      pointer-events: none;
-      z-index: 1000;
-    }
-    #loadingBox {
-      background: #fff;
-      padding: 12px 14px;
-      border-radius: 10px;
-      box-shadow: 0 4px 16px rgba(0,0,0,.2);
-      font-size: 14px;
-    }
-
+    #loadingMessage { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:1000; }
+    #loadingBox { background:#fff; padding:12px 14px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
     #errorMessage {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #d32f2f;
-      color: white;
-      padding: 12px 16px;
-      border-radius: 6px;
-      z-index: 1001;
-      box-shadow: 0 3px 10px rgba(0,0,0,0.2);
-      display: none;
-      max-width: 80%;
-      text-align: center;
-      font-size: 14px;
+      position:absolute; top:10px; left:50%; transform:translateX(-50%); background:#d32f2f; color:#fff;
+      padding:12px 16px; border-radius:6px; z-index:1001; box-shadow:0 3px 10px rgba(0,0,0,.2);
+      display:none; max-width:80%; text-align:center; font-size:14px;
     }
 
-    select, button {
-      width: 100%;
-      padding: 8px 10px;
-      margin: 4px 0;
-      box-sizing: border-box;
-      font-size: 12px;
-      border-radius: 8px;
-    }
-    button {
-      background-color: #0079c1; color: #fff; border: none; cursor: pointer;
-    }
-    button:hover { background-color: #005a8c; }
-    .btn-ghost {
-      background: #fff; color: #000; border: 1px solid #ccc;
-    }
+    select, button { width:100%; padding:8px 10px; margin:4px 0; box-sizing:border-box; font-size:12px; border-radius:8px; }
+    button { background-color:#0079c1; color:#fff; border:none; cursor:pointer; }
+    button:hover { background-color:#005a8c; }
+    .btn-ghost { background:#fff; color:#000; border:1px solid #ccc; }
 
-    .hidden { display: none !important; }
+    .hidden { display:none!important; }
 
-    .info-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 11px;
-    }
-    .info-table th, .info-table td {
-      text-align: left;
-      padding: 2px 4px;
-      border-bottom: 1px dotted #eee;
-      vertical-align: top;
-      word-break: break-word;
-    }
-    .info-table th {
-      width: 40%;
-      color: #444;
-      font-weight: 600;
-    }
+    .info-table { width:100%; border-collapse:collapse; font-size:11px; }
+    .info-table th, .info-table td { text-align:left; padding:2px 4px; border-bottom:1px dotted #eee; vertical-align:top; word-break:break-word; }
+    .info-table th { width:40%; color:#444; font-weight:600; }
 
-    .custom-ui {
-      display: flex; gap: 6px;
-      align-items: center;
-      background: transparent;
-      border: 0;
-      padding: 0;
-    }
-    .custom-ui button {
-      width: auto;
-      min-width: 36px;
-      padding: 8px;
-    }
+    .custom-ui { display:flex; gap:6px; align-items:center; background:transparent; border:0; padding:0; }
+    .custom-ui button { width:auto; min-width:36px; padding:8px; }
 
     .esri-view { touch-action: pan-x pan-y; }
 
     .filter-loading {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid #f3f3f3;
-      border-top: 2px solid #0079c1;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-left: 8px;
-      vertical-align: middle;
+      display:inline-block; width:16px; height:16px; border:2px solid #f3f3f3; border-top:2px solid #0079c1;
+      border-radius:50%; animation:spin 1s linear infinite; margin-left:8px; vertical-align:middle;
     }
-    
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
+    @keyframes spin { 0%{transform:rotate(0)} 100%{transform:rotate(360deg)} }
 
     #corsWarning {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: #ff9800;
-      color: white;
-      padding: 20px;
-      border-radius: 8px;
-      z-index: 1002;
-      text-align: center;
-      max-width: 80%;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      display: none;
+      position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); background:#ff9800; color:#fff;
+      padding:20px; border-radius:8px; z-index:1002; text-align:center; max-width:80%;
+      box-shadow:0 4px 12px rgba(0,0,0,0.3); display:none;
     }
 
     .fire-status {
-      position: absolute;
-      top: 100px;
-      right: 10px;
-      background: #fff;
-      padding: 8px 12px;
-      border-radius: 6px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      font-size: 12px;
-      z-index: 10;
-      display: none;
+      position:absolute; top:100px; right:10px; background:#fff; padding:8px 12px; border-radius:6px;
+      box-shadow:0 2px 6px rgba(0,0,0,0.2); font-size:12px; z-index:10; display:none;
     }
   </style>
 </head>
 <body>
   <div id="viewDiv"></div>
+
+  <button id="toggleFirePanel" title="Ativar/Desativar dados de incêndios" aria-pressed="false">🔥</button>
+
   <div id="infoPanel" aria-live="polite">
     <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
     <div id="infoContent"></div>
   </div>
 
-  <button id="toggleFirePanel" title="Ativar/Desativar dados de incêndios">🔥</button>
-
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
     <strong style="display:block; margin-left: 22px; margin-bottom: 4px; font-size:8px;">Filtrar</strong>
-    <select id="distritoFilter" aria-label="Filtrar por distrito">
-      <option value="">Todos os distritos</option>
-    </select>
-    <select id="concelhoFilter" aria-label="Filtrar por concelho">
-      <option value="">Todos os concelhos</option>
-    </select>
+    <select id="distritoFilter" aria-label="Filtrar por distrito"><option value="">Todos os distritos</option></select>
+    <select id="concelhoFilter" aria-label="Filtrar por concelho"><option value="">Todos os concelhos</option></select>
     <div class="custom-ui">
       <button id="applyFilter">Aplicar</button>
       <button id="resetFilter" class="btn-ghost">Repor</button>
@@ -216,10 +105,7 @@
 
   <div id="fireStatus" class="fire-status">Dados de incêndio ativos</div>
 
-  <div id="loadingMessage">
-    <div id="loadingBox">A carregar dados WFS…</div>
-  </div>
-
+  <div id="loadingMessage"><div id="loadingBox">A carregar dados WFS…</div></div>
   <div id="errorMessage"></div>
 
   <div id="corsWarning">
@@ -231,698 +117,439 @@
 
   <script src="https://js.arcgis.com/4.33/"></script>
   <script>
-    require([
-      "esri/config",
-      "esri/Map",
-      "esri/views/MapView",
-      "esri/layers/GraphicsLayer",
-      "esri/Graphic",
-      "esri/geometry/Point",
-      "esri/geometry/Polyline",
-      "esri/geometry/Extent",
-      "esri/geometry/geometryEngine",
-      "esri/symbols/SimpleMarkerSymbol",
-      "esri/symbols/SimpleLineSymbol",
-      "esri/widgets/BasemapGallery",
-      "esri/widgets/Expand",
-      "esri/widgets/Search",
-      "esri/request",
-      "esri/layers/GeoJSONLayer",
-      "esri/layers/FeatureLayer",
-      "esri/layers/CSVLayer"
-    ], function(esriConfig, Map, MapView, GraphicsLayer, Graphic, Point, Polyline, Extent, geometryEngine, SimpleMarkerSymbol, SimpleLineSymbol, BasemapGallery, Expand, Search, esriRequest, GeoJSONLayer, FeatureLayer, CSVLayer) {
+  require([
+    "esri/config",
+    "esri/Map",
+    "esri/views/MapView",
+    "esri/layers/GraphicsLayer",
+    "esri/Graphic",
+    "esri/geometry/Point",
+    "esri/geometry/Polyline",
+    "esri/geometry/Extent",
+    "esri/symbols/SimpleMarkerSymbol",
+    "esri/symbols/SimpleLineSymbol",
+    "esri/widgets/BasemapGallery",
+    "esri/widgets/Expand",
+    "esri/widgets/Search",
+    "esri/request",
+    "esri/layers/GeoJSONLayer",
+    "esri/layers/FeatureLayer",
+    "esri/core/reactiveUtils"   // <— per sostituire watch deprecati
+  ], function(esriConfig, Map, MapView, GraphicsLayer, Graphic, Point, Polyline, Extent,
+              SimpleMarkerSymbol, SimpleLineSymbol, BasemapGallery, Expand, Search,
+              esriRequest, GeoJSONLayer, FeatureLayer, reactiveUtils) {
 
-      // Configurazione CORS
-      try {
-        esriConfig.request = esriConfig.request || {};
-        esriConfig.request.corsEnabledServers = esriConfig.request.corsEnabledServers || [];
-        esriConfig.request.trustedServers = esriConfig.request.trustedServers || [];
-        
-        const servers = ["si.icnf.pt", "https://si.icnf.pt", "services9.arcgis.com"];
-        servers.forEach(host => {
-          if (!esriConfig.request.corsEnabledServers.includes(host)) {
-            esriConfig.request.corsEnabledServers.push(host);
-          }
-          if (!esriConfig.request.trustedServers.includes(host)) {
-            esriConfig.request.trustedServers.push(host);
-          }
-        });
-        
-        esriConfig.request.timeout = 30000;
-        // IMPORTANTE: Non usare credenziali per evitare problemi CORS
-        esriConfig.request.credentials = 'omit';
-        
-      } catch (e) {
-        console.warn("CORS configuration error:", e);
-      }
+    /* CORS */
+    try {
+      esriConfig.request = esriConfig.request || {};
+      esriConfig.request.corsEnabledServers = esriConfig.request.corsEnabledServers || [];
+      esriConfig.request.trustedServers = esriConfig.request.trustedServers || [];
+      ["si.icnf.pt", "services9.arcgis.com", "rhvpkkiftonktxq3.svcs9.arcgis.com"].forEach(host=>{
+        if(!esriConfig.request.corsEnabledServers.includes(host)) esriConfig.request.corsEnabledServers.push(host);
+        if(!esriConfig.request.trustedServers.includes(host)) esriConfig.request.trustedServers.push(host);
+      });
+      esriConfig.request.timeout = 30000;
+      esriConfig.request.credentials = "omit";
+    } catch(e){ console.warn("CORS configuration error:", e); }
 
-      const map = new Map({ basemap: "streets-navigation-vector" });
-      const view = new MapView({
-        container: "viewDiv",
-        map,
-        center: [-8, 39.5],
-        zoom: 7,
-        popupEnabled: true
+    const map = new Map({ basemap: "streets-navigation-vector" });
+    const view = new MapView({ container: "viewDiv", map, center: [-8, 39.5], zoom: 7, popupEnabled: true });
+
+    /* Layers base */
+    const pointsLayer = new GraphicsLayer();
+    const linesLayer = new GraphicsLayer();
+    const filteredPointsLayer = new GraphicsLayer();
+    const locationLayer = new GraphicsLayer();
+    map.addMany([pointsLayer, linesLayer, filteredPointsLayer, locationLayer]);
+
+    /* UI refs */
+    const infoPanel = document.getElementById("infoPanel");
+    const infoContent = document.getElementById("infoContent");
+    const toggleInfo = document.getElementById("toggleInfo");
+    const loadingMessage = document.getElementById("loadingMessage");
+    const errorMessage = document.getElementById("errorMessage");
+    const distritoFilter = document.getElementById("distritoFilter");
+    const concelhoFilter = document.getElementById("concelhoFilter");
+    const applyFilter = document.getElementById("applyFilter");
+    const resetFilter = document.getElementById("resetFilter");
+    const toggleFilter = document.getElementById("toggleFilter");
+    const filterPanel = document.getElementById("filterPanel");
+    const filterLoading = document.getElementById("filterLoading");
+
+    /* Fire toggle + status */
+    const toggleFirePanel = document.getElementById("toggleFirePanel");
+    const fireStatus = document.getElementById("fireStatus");
+
+    /* Stato */
+    let allPoints = [];
+    let nearest = [];
+    const uniqueDistritos = new Set();
+    const distritoConcelhoMap = {};
+    let spatialGrid = {};
+    let fireLayer = null;
+    let isFireLayerActive = false;
+
+    /* Simboli */
+    const waterPointSymbol = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[80,220,255], width:1 }, size:5 });
+    const filteredPointSymbol = new SimpleMarkerSymbol({ color:[255,64,64,0.9], outline:{ color:[255,230,120], width:1 }, size:6 });
+    const locationSymbol = new SimpleMarkerSymbol({ color:[0,200,0,0.9], outline:{ color:[255,255,255], width:2 }, size:10 });
+    const lineSymbol = new SimpleLineSymbol({ color:[255,0,0,0.6], width:1.5, style:"short-dash" });
+
+    /* Messaggi errore */
+    function showError(message, duration=5000){
+      errorMessage.textContent = message;
+      errorMessage.style.display = "block";
+      setTimeout(()=>{ errorMessage.style.display="none"; }, duration);
+    }
+
+    /* Widget di base */
+    view.when(()=>{
+      const basemapGallery = new BasemapGallery({ view });
+      const bgExpand = new Expand({ view, content: basemapGallery, expandIconClass:"esri-icon-basemap", expandTooltip:"Mudar mapa base" });
+      view.ui.add(bgExpand, "bottom-right");
+
+      // reactiveUtils al posto di watch deprecato
+      reactiveUtils.watch(()=> basemapGallery.activeBasemap, ()=>{
+        bgExpand.expanded = false;
       });
 
-      // Layers
-      const pointsLayer = new GraphicsLayer();
-      const linesLayer = new GraphicsLayer();
-      const filteredPointsLayer = new GraphicsLayer();
-      const locationLayer = new GraphicsLayer();
-      map.addMany([pointsLayer, linesLayer, filteredPointsLayer, locationLayer]);
+      const searchWidget = new Search({ view });
+      view.ui.add(searchWidget, { position:"top-right", index:1 });
 
-      // UI refs
-      const infoPanel = document.getElementById("infoPanel");
-      const infoContent = document.getElementById("infoContent");
-      const toggleInfo = document.getElementById("toggleInfo");
-      const loadingMessage = document.getElementById("loadingMessage");
-      const errorMessage = document.getElementById("errorMessage");
-      const distritoFilter = document.getElementById("distritoFilter");
-      const concelhoFilter = document.getElementById("concelhoFilter");
-      const applyFilter = document.getElementById("applyFilter");
-      const resetFilter = document.getElementById("resetFilter");
-      const toggleFilter = document.getElementById("toggleFilter");
-      const filterPanel = document.getElementById("filterPanel");
-      const filterLoading = document.getElementById("filterLoading");
-      
-      // Fire panel elements
-      const toggleFirePanel = document.getElementById("toggleFirePanel");
-      const fireStatus = document.getElementById("fireStatus");
+      const rightGroup = document.createElement("div"); rightGroup.className="custom-ui";
+      const locateBtn = document.createElement("button");
+      locateBtn.innerHTML="📍"; locateBtn.title="Localizar-me"; locateBtn.className="btn-ghost";
+      locateBtn.addEventListener("click", ()=> manualLocate());
+      rightGroup.appendChild(locateBtn);
+      view.ui.add(rightGroup, { position:"top-right", index:0 });
 
-      // State
-      let allPoints = [];
-      let nearest = [];
-      const uniqueDistritos = new Set();
-      const distritoConcelhoMap = {};
-      
-      // Fire data state
-      let fireLayer = null;
-      let isFireLayerActive = false;
-
-      // Symbols
-      const waterPointSymbol = new SimpleMarkerSymbol({
-        color: [0, 112, 255, 0.85],
-        outline: { color: [80, 220, 255], width: 1 },
-        size: 5
-      });
-      const filteredPointSymbol = new SimpleMarkerSymbol({
-        color: [255, 64, 64, 0.9],
-        outline: { color: [255, 230, 120], width: 1 },
-        size: 6
-      });
-      const locationSymbol = new SimpleMarkerSymbol({
-        color: [0, 200, 0, 0.9],
-        outline: { color: [255, 255, 255], width: 2 },
-        size: 10
-      });
-      const lineSymbol = new SimpleLineSymbol({
-        color: [255, 0, 0, 0.6],
-        width: 1.5,
-        style: "short-dash"
-      });
-
-      // Fire symbol
-      const fireSymbol = new SimpleMarkerSymbol({
-        color: [255, 0, 0, 0.7],
-        outline: {
-          color: [255, 255, 255, 0.8],
-          width: 1
-        },
-        size: 8
-      });
-
-      // Error handling function
-      function showError(message, duration = 5000) {
-        errorMessage.textContent = message;
-        errorMessage.style.display = 'block';
-        setTimeout(() => {
-          errorMessage.style.display = 'none';
-        }, duration);
-      }
-
-      // ArcGIS UI
-      view.when(() => {
-        const basemapGallery = new BasemapGallery({ view: view });
-        const bgExpand = new Expand({
-          view: view,
-          content: basemapGallery,
-          expandIconClass: "esri-icon-basemap",
-          expandTooltip: "Mudar mapa base"
-        });
-        view.ui.add(bgExpand, "bottom-right");
-        // Auto-close basemap after selection
-        basemapGallery.watch("activeBasemap", () => { bgExpand.expanded = false; });
-
-        const searchWidget = new Search({ view });
-        view.ui.add(searchWidget, { position: "top-right", index: 1 });
-
-        // Right group: geolocation pin
-        const rightGroup = document.createElement("div");
-        rightGroup.className = "custom-ui";
-        const locateBtn = document.createElement("button");
-        locateBtn.innerHTML = "📍";
-        locateBtn.title = "Localizar-me";
-        locateBtn.className = "btn-ghost";
-        locateBtn.addEventListener("click", () => manualLocate());
-        rightGroup.appendChild(locateBtn);
-        
-        // Aggiungi il pulsante fuoco al gruppo destro
-        const fireBtn = document.createElement("button");
-        fireBtn.innerHTML = "🔥";
-        fireBtn.title = "Ativar/Desativar dados de incêndios";
-        fireBtn.className = "btn-ghost";
-        fireBtn.addEventListener("click", () => toggleFirePanel.click());
-        rightGroup.appendChild(fireBtn);
-        
-        view.ui.add(rightGroup, { position: "top-right", index: 0 });
-
-        // Left group: reset extent under zoom
-        const leftGroup = document.createElement("div");
-        leftGroup.className = "custom-ui";
-        const resetExtentBtn = document.createElement("button");
-        resetExtentBtn.innerHTML = "↺";
-        resetExtentBtn.title = "Repor extensão inicial";
-        resetExtentBtn.className = "btn-ghost";
-        resetExtentBtn.addEventListener("click", () => view.goTo({ center: [-8, 39.5], zoom: 7 }));
-        leftGroup.appendChild(resetExtentBtn);
-        view.ui.add(leftGroup, { position: "top-left", index: 1 });
-
-      });
-
-      function manualLocate() {
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(pos => {
-            setLocation(pos.coords.longitude, pos.coords.latitude);
-          }, () => {
-            showError("Não foi possível obter a localização.");
-          }, { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 });
-        } else {
-          showError("Geolocalização não suportada.");
-        }
-      }
-
-      function setLocation(lon, lat) {
-        locationLayer.removeAll();
-        const point = new Point({ longitude: lon, latitude: lat });
-        view.goTo({ target: point, zoom: 14 });
-        locationLayer.add(new Graphic({ geometry: point, symbol: locationSymbol }));
-      }
-
-      function createPopupContent(attrs) {
-        const valid = Object.entries(attrs).filter(([k, v]) => v != null && v !== "");
-        valid.sort((a, b) => a[0].localeCompare(b[0]));
-        let html = "<table class='info-table'><tbody>";
-        for (const [k, v] of valid) {
-          const label = k.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-          html += "<tr><th>" + label + "</th><td>" + v + "</td></tr>";
-        }
-        html += "</tbody></table>";
-        return html;
-      }
-
-      // WFS — use EPSG:4326 to avoid client projection & improve Chrome compatibility
-      const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
-
-      // Fire service URL
-      const fireServiceUrl = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0";
-
-      // iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use multi-route plain fetch only there.
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const isChromeIOS = /CriOS/.test(navigator.userAgent) && isIOS;
-
-      if (isChromeIOS) {
-        (async () => {
-          const urls = [
-            wfsUrl,
-            "https://corsproxy.io/?" + encodeURIComponent(wfsUrl)
-          ];
-          let loaded = false;
-          for (const u of urls) {
-            try {
-              const res = await fetch(u, { cache: "no-store", credentials: "omit" });
-              if (!res.ok) continue;
-              const txt = await res.text();
-              const gj = JSON.parse(txt);
-              if (gj && gj.features) {
-                ingestFeatures(gj.features);
-                loaded = true;
-                break;
-              }
-            } catch (e) {
-              console.warn("CriOS fetch falhou:", u, e);
-            }
-          }
-          if (!loaded) {
-            try {
-              await fallbackGeoJSON();
-              loaded = true;
-            } catch (e) {
-              console.warn("CriOS fallback GeoJSONLayer falhou:", e);
-              showError("Falha ao carregar dados. Verifique a conexão.");
-            }
-            loadingMessage.classList.add("hidden");
-          }
-        })();
-      } else {
-        // Original path for all other browsers
-        loadWFS()
-          .catch(() => fallbackGeoJSON())
-          .catch(e => {
-            console.error("All data loading methods failed:", e);
-            showError("Não foi possível carregar os dados. Tente novamente mais tarde.");
-          })
-          .finally(() => loadingMessage.classList.add("hidden"));
-      }
-
-      function loadWFS() {
-        return esriRequest(wfsUrl, {
-          responseType: "json",
-          query: {}
-        }).then(response => {
-          const geojson = response.data;
-          if (!geojson || !geojson.features) throw new Error("Sem dados GeoJSON válidos.");
-          ingestFeatures(geojson.features);
-        }).catch(err => {
-          console.warn("Falha WFS via esri/request:", err);
-          throw err;
-        });
-      }
-
-      function fallbackGeoJSON() {
-        return new Promise((resolve, reject) => {
-          try {
-            const layer = new GeoJSONLayer({
-              url: wfsUrl,
-              title: "Pontos de água (WFS → GeoJSON)",
-              popupTemplate: {
-                title: "{nome}",
-                content: (e) => createPopupContent(e.graphic.attributes)
-              }
-            });
-            layer.when(() => {
-              // Pull graphics for local processing (filters/nearest)
-              layer.queryFeatures().then(fs => {
-                ingestFeatures(fs.features.map(f => ({
-                  geometry: { coordinates: [f.geometry.longitude, f.geometry.latitude] },
-                  properties: f.attributes
-                })));
-                resolve();
-              }, reject);
-            }, reject);
-            map.add(layer);
-          } catch (e) {
-            console.warn("Falha fallback GeoJSONLayer:", e);
-            reject(e);
-          }
-        });
-      }
-
-      function ingestFeatures(features) {
-        for (const feat of features) {
-          const coords = feat.geometry && feat.geometry.coordinates;
-          if (!coords || coords.length < 2) continue;
-          const lon = Number(coords[0]), lat = Number(coords[1]);
-          const pt = new Point({ longitude: lon, latitude: lat });
-          const g = new Graphic({
-            geometry: pt,
-            attributes: feat.properties || {},
-            symbol: waterPointSymbol,
-            popupTemplate: {
-              title: (feat.properties && (feat.properties.nome || feat.properties.tipologia)) || "Ponto de água",
-              content: function (event) {
-                var g = event.graphic;
-                var geom = g.geometry;
-                var attrs = g.attributes || {};
-                var lat = Number(geom.latitude).toFixed(6);
-                var lon = Number(geom.longitude).toFixed(6);
-                var wazeUrl  = "https://waze.com/ul?ll=" + lat + "%2C" + lon + "&navigate=yes&zoom=17";
-                var gmapsUrl = "https://www.google.com/maps/dir/?api=1&destination=" + lat + "," + lon + "";
-                var infoHtml = createPopupContent(attrs);
-                var linksHtml = "<div style='margin-top:8px; display:flex; gap:10px; align-items:center;'>"
-                  + "<a href='" + wazeUrl + "' target='_blank' rel='noopener noreferrer'>Waze</a>"
-                  + "<a href='" + gmapsUrl + "' target='_blank' rel='noopener noreferrer' style='margin-left:8px;'>Google</a>"
-                  + "</div>";
-                return infoHtml + linksHtml;
-              }
-            }
-          });
-          allPoints.push(g);
-          pointsLayer.add(g);
-
-          // Build filters
-          const distrito = (feat.properties && feat.properties.distrito) || "Desconhecido";
-          const concelho = (feat.properties && feat.properties.concelho) || "Desconhecido";
-          uniqueDistritos.add(distrito);
-          if (!distritoConcelhoMap[distrito]) distritoConcelhoMap[distrito] = new Set();
-          distritoConcelhoMap[distrito].add(concelho);
-        }
-        // Populate selects
-        for (const d of Array.from(uniqueDistritos).sort()) {
-          distritoFilter.appendChild(new Option(d, d));
-        }
-        // Initial nearest computation once features ready
-        if (view.center) findNearest(view.center);
-      }
-
-      // Filtering
-      distritoFilter.addEventListener("change", function () {
-        const sel = this.value;
-        concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
-        if (sel && distritoConcelhoMap[sel]) {
-          Array.from(distritoConcelhoMap[sel]).sort().forEach(c => {
-            concelhoFilter.appendChild(new Option(c, c));
-          });
-        }
-      });
-
-      applyFilter.addEventListener("click", function () {
-        filterLoading.classList.remove("hidden");
-        
-        // Use setTimeout to allow the UI to update before heavy processing
-        setTimeout(() => {
-          const distrito = distritoFilter.value;
-          const concelho = concelhoFilter.value;
-          pointsLayer.removeAll();
-          filteredPointsLayer.removeAll();
-          for (const g of allPoints) {
-            const a = g.attributes || {};
-            const matchD = !distrito || a.distrito === distrito;
-            const matchC = !concelho || a.concelho === concelho;
-            if (matchD && matchC) {
-              const fg = g.clone();
-              fg.symbol = filteredPointSymbol;
-              filteredPointsLayer.add(fg);
-            }
-          }
-          // Zoom to filtered graphics if any and refresh nearest box
-          const sel = filteredPointsLayer.graphics.items;
-          if (sel.length) {
-            fitToGraphics(sel, 60);
-          }
-          if (view.center) findNearest(view.center);
-          
-          filterLoading.classList.add("hidden");
-        }, 100);
-      });
-
-      resetFilter.addEventListener("click", function () {
-        distritoFilter.value = "";
-        concelhoFilter.value = "";
-        concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
-        pointsLayer.removeAll();
-        filteredPointsLayer.removeAll();
-        for (const g of allPoints) pointsLayer.add(g);
-        const all = pointsLayer.graphics.items;
-        if (all.length) {
-          fitToGraphics(all, 60);
-        }
-        if (view.center) findNearest(view.center);
-      });
-
-      
-      function fitToGraphics(graphics, padding = 40) {
-        if (!graphics || !graphics.length) return;
-        let xmin = Infinity, ymin = Infinity, xmax = -Infinity, ymax = -Infinity;
-        for (const g of graphics) {
-          const geom = g.geometry;
-          if (!geom) continue;
-          const x = geom.longitude ?? geom.x;
-          const y = geom.latitude ?? geom.y;
-          if (typeof x !== 'number' || typeof y !== 'number') continue;
-          if (x < xmin) xmin = x;
-          if (y < ymin) ymin = y;
-          if (x > xmax) xmax = x;
-          if (y > ymax) ymax = y;
-        }
-        if (!isFinite(xmin) || !isFinite(ymin) || !isFinite(xmax) || !isFinite(ymax)) return;
-        const ext = new Extent({ xmin, ymin, xmax, ymax, spatialReference: { wkid: 4326 } });
-        view.goTo({ target: ext, padding }).catch(() => {});
-      }
-
-      // Panels collapse/expand
-      function togglePanel(panel, btn) {
-        const collapsed = panel.dataset.state === "collapsed";
-        if (collapsed) {
-          panel.dataset.state = "expanded";
-          panel.style.maxHeight = "50%";
-          panel.style.opacity = "1";
-          panel.style.transform = "translateY(0)";
-          btn.textContent = btn.id === "toggleInfo" ? "📋" : "⚙️";
-        } else {
-          panel.dataset.state = "collapsed";
-          panel.style.maxHeight = "24px";
-          panel.style.opacity = "0.7";
-          panel.style.transform = "translateY(0)";
-          btn.textContent = "▶";
-        }
-      }
-      toggleInfo.addEventListener("click", () => togglePanel(infoPanel, toggleInfo));
-      toggleFilter.addEventListener("click", () => togglePanel(filterPanel, toggleFilter));
-      
-      // Fire layer toggle
-      toggleFirePanel.addEventListener("click", () => {
-        if (isFireLayerActive) {
-          // Remove fire layer
-          if (fireLayer) {
-            map.remove(fireLayer);
-            fireLayer = null;
-          }
-          isFireLayerActive = false;
-          fireStatus.style.display = 'none';
-          toggleFirePanel.style.backgroundColor = 'transparent';
-        } else {
-          // Add fire layer
-          loadFireLayer();
-          isFireLayerActive = true;
-          fireStatus.style.display = 'block';
-          toggleFirePanel.style.backgroundColor = 'rgba(255, 204, 203, 0.5)';
-        }
-      });
-      
-      // Start collapsed on small screens
-      const smallScreen = Math.max(window.innerWidth, window.innerHeight) < 700;
-      if (smallScreen) {
-        togglePanel(infoPanel, toggleInfo);
-        togglePanel(filterPanel, toggleFilter);
-      }
-
-      // Throttled & debounced nearest computation for better perf on Chrome mobile
-      let lastMove = 0;
-      const MOVE_THROTTLE_MS = 200;
-      function onMove(e){
-        const now = performance.now();
-        if (now - lastMove < MOVE_THROTTLE_MS) return;
-        lastMove = now;
-        const pt = view.toMap({ x: e.x, y: e.y });
-        if (pt) findNearest(pt);
-      }
-      view.on("pointer-move", onMove);
-      view.on("pointer-down", onMove);
-      view.on("pointer-up", onMove);
-      view.on("drag", (e) => {
-        // while dragging, recompute using center to ensure feedback
-        const pt = view.center && view.center.clone();
-        if (pt) findNearest(pt);
-      });
-
-      // Debounce helper
-      function debounce(fn, wait){
-        let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args), wait); };
-      }
-      const centerWatchHandler = debounce(() => {
-        if (view.center) findNearest(view.center);
-      }, 300);
-
-      view.watch("center", centerWatchHandler);
-      view.watch("stationary", (s) => { if (s && view.center) findNearest(view.center); });
-      view.on("click", (e) => { const pt = view.toMap(e); if (pt) findNearest(pt); });
-
-      // Optimized distance calculation with spatial partitioning for better mobile performance
-      let spatialGrid = {};
-      
-      function buildSpatialGrid(points, gridSize = 0.5) {
-        // Clear previous grid
-        spatialGrid = {};
-        
-        for (const point of points) {
-          const geom = point.geometry;
-          if (!geom) continue;
-          
-          const lon = geom.longitude;
-          const lat = geom.latitude;
-          
-          const gridX = Math.floor(lon / gridSize);
-          const gridY = Math.floor(lat / gridSize);
-          const gridKey = `${gridX},${gridY}`;
-          
-          if (!spatialGrid[gridKey]) {
-            spatialGrid[gridKey] = [];
-          }
-          
-          spatialGrid[gridKey].push(point);
-        }
-      }
-      
-      function metersDistance(a, b) {
-        // Pure Haversine (geodesic) to avoid geometry engine issues
-        const R = 6371000;
-        const toRad = d => d * Math.PI / 180;
-        const dLat = toRad(b.latitude - a.latitude);
-        const dLon = toRad(b.longitude - a.longitude);
-        const lat1 = toRad(a.latitude), lat2 = toRad(b.latitude);
-        const s = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-        return Math.round(2 * R * Math.asin(Math.sqrt(s)));
-      }
-
-      function findNearest(pt) {
-        if (!allPoints.length) return;
-        linesLayer.removeAll();
-
-        // Use spatial grid for faster searching on mobile
-        if (Object.keys(spatialGrid).length === 0) {
-          buildSpatialGrid(allPoints);
-        }
-
-        const active = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : allPoints;
-        
-        // First check the grid cell where the point is located and adjacent cells
-        const gridSize = 0.5;
-        const gridX = Math.floor(pt.longitude / gridSize);
-        const gridY = Math.floor(pt.latitude / gridSize);
-        
-        let candidates = [];
-        const searchRadius = 2; // Check adjacent cells in a 5x5 grid
-        
-        for (let x = gridX - searchRadius; x <= gridX + searchRadius; x++) {
-          for (let y = gridY - searchRadius; y <= gridY + searchRadius; y++) {
-            const gridKey = `${x},${y}`;
-            if (spatialGrid[gridKey]) {
-              for (const g of spatialGrid[gridKey]) {
-                // Only include points that are in the active set
-                if (active.includes(g)) {
-                  candidates.push({
-                    feature: g,
-                    distance: metersDistance(pt, g.geometry)
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // If we didn't find enough points in the nearby grid cells, fall back to full search
-        if (candidates.length < 4) {
-          candidates = active.map(g => ({
-            feature: g,
-            distance: metersDistance(pt, g.geometry)
-          }));
-        }
-
-        nearest = candidates
-          .filter(o => o.distance <= 10000)
-          .sort((a, b) => a.distance - b.distance)
-          .slice(0, 4);
-
-        for (const item of nearest) {
-          const line = new Polyline({
-            paths: [[pt.longitude, pt.latitude], [item.feature.geometry.longitude, item.feature.geometry.latitude]],
-            spatialReference: { wkid: 4326 }
-          });
-          linesLayer.add(new Graphic({ geometry: line, symbol: lineSymbol }));
-        }
-        renderInfo();
-      }
-
-      function renderInfo() {
-        let html = "<h4 style='margin:4px 0 6px'>Pontos de água mais próximos <small>(até 10 km)</small>:</h4>";
-        if (!nearest.length) {
-          html += "<p style='margin:0'>Nenhum ponto encontrado.</p>";
-        } else {
-          html += "<ul style='margin:0; padding-left: 16px; font-size: 12px;'>";
-          for (const o of nearest) {
-            const a = o.feature.attributes || {};
-            const name = a.nomenome || a.nome || "Sem nome";
-            const type = a.tipologia ? (" (" + a.tipologia + ")") : "";
-            html += "<li>" + name + type + " — " + o.distance + " m</li>";
-          }
-          html += "</ul>";
-        }
-        infoContent.innerHTML = html;
-      }
-
-      // Build spatial grid when data is loaded
-      setTimeout(() => {
-        if (allPoints.length > 0) {
-          buildSpatialGrid(allPoints);
-        }
-      }, 2000);
-
-      // Fire layer functions - Versione semplificata
-      function loadFireLayer() {
-        // Mostra avviso CORS se siamo su GitHub Pages
-        if (window.location.hostname.includes('github.io')) {
-          document.getElementById('corsWarning').style.display = 'block';
-        }
-        
-        fireStatus.textContent = "Carregando dados de incêndios...";
-        
-        // APPROCCIO ALTERNATIVO: usa un layer CSV invece di FeatureLayer per evitare problemi CORS
-        try {
-          // Crea un layer grafico vuoto
-          fireLayer = new GraphicsLayer({
-            title: "Incêndios VIIRS"
-          });
-          
-          // Aggiungi il layer alla mappa
-          map.add(fireLayer);
-          
-          // Simula il caricamento con un timeout
-          setTimeout(() => {
-            fireStatus.textContent = "Dados de incêndio simulados (CORS bloqueado)";
-            showError("Dados de incêndio não disponíveis devido a restrições CORS.");
-            
-            // Aggiungi alcuni punti fittizi per dimostrazione
-            const demoPoints = [
-              { longitude: -8.5, latitude: 40.2, name: "Incêndio Demo 1" },
-              { longitude: -7.8, latitude: 39.5, name: "Incêndio Demo 2" },
-              { longitude: -8.2, latitude: 41.1, name: "Incêndio Demo 3" }
-            ];
-            
-            demoPoints.forEach(point => {
-              const pt = new Point({ longitude: point.longitude, latitude: point.latitude });
-              const g = new Graphic({
-                geometry: pt,
-                attributes: { name: point.name },
-                symbol: fireSymbol
-              });
-              fireLayer.add(g);
-            });
-          }, 1000);
-          
-        } catch (error) {
-          console.error("Errore nel caricamento del layer fuoco:", error);
-          showError("Errore nel caricamento dei dati degli incendi.");
-          
-          // Ripristina lo stato del pulsante
-          isFireLayerActive = false;
-          fireStatus.style.display = 'none';
-          toggleFirePanel.style.backgroundColor = 'transparent';
-          
-          // Rimuovi il layer fallito
-          if (fireLayer) {
-            map.remove(fireLayer);
-            fireLayer = null;
-          }
-        }
-      }
-
-      // Robust error reporting (in case both loaders fail)
-      window.addEventListener("unhandledrejection", (e) => {
-        console.warn("Unhandled rejection:", e.reason);
-        // Non mostrare un errore per evitare il loop di promesse
-      });
+      const leftGroup = document.createElement("div"); leftGroup.className="custom-ui";
+      const resetExtentBtn = document.createElement("button");
+      resetExtentBtn.innerHTML="↺"; resetExtentBtn.title="Repor extensão inicial"; resetExtentBtn.className="btn-ghost";
+      resetExtentBtn.addEventListener("click", ()=> view.goTo({ center: [-8,39.5], zoom:7 }));
+      leftGroup.appendChild(resetExtentBtn);
+      view.ui.add(leftGroup, { position:"top-left", index:1 });
     });
+
+    function manualLocate(){
+      if(navigator.geolocation){
+        navigator.geolocation.getCurrentPosition(pos=>{
+          setLocation(pos.coords.longitude, pos.coords.latitude);
+        }, ()=> showError("Não foi possível obter a localização."),
+        { enableHighAccuracy:true, maximumAge:30000, timeout:10000 });
+      } else { showError("Geolocalização não suportada."); }
+    }
+    function setLocation(lon, lat){
+      locationLayer.removeAll();
+      const point = new Point({ longitude:lon, latitude:lat });
+      view.goTo({ target:point, zoom:14 });
+      locationLayer.add(new Graphic({ geometry:point, symbol:locationSymbol }));
+    }
+
+    function createPopupContent(attrs){
+      const valid = Object.entries(attrs).filter(([k,v])=> v!=null && v!=="");
+      valid.sort((a,b)=> a[0].localeCompare(b[0]));
+      let html = "<table class='info-table'><tbody>";
+      for(const [k,v] of valid){
+        const label = k.replace(/_/g," ").replace(/\b\w/g,l=>l.toUpperCase());
+        html += "<tr><th>"+label+"</th><td>"+v+"</td></tr>";
+      }
+      html += "</tbody></table>";
+      return html;
+    }
+
+    /* WFS ICNF (EPSG:4326) */
+    const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
+
+    /* VIIRS FeatureServer (niente query param!) */
+    const fireServiceUrl = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0";
+
+    /* Carico WFS (prima via esri/request, poi fallback GeoJSONLayer) */
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==="MacIntel" && navigator.maxTouchPoints>1);
+    const isChromeIOS = /CriOS/.test(navigator.userAgent) && isIOS;
+
+    if(isChromeIOS){
+      (async()=>{
+        const urls=[ wfsUrl, "https://corsproxy.io/?"+encodeURIComponent(wfsUrl) ];
+        let ok=false;
+        for(const u of urls){
+          try{
+            const res = await fetch(u,{ cache:"no-store", credentials:"omit" });
+            if(!res.ok) continue;
+            const gj = await res.json();
+            if(gj && gj.features){ ingestFeatures(gj.features); ok=true; break; }
+          } catch(e){ console.warn("CriOS fetch falhou:", u, e); }
+        }
+        if(!ok){
+          try{ await fallbackGeoJSON(); ok=true; }
+          catch(e){ console.warn("CriOS fallback GeoJSONLayer falhou:", e); showError("Falha ao carregar dados. Verifique a conexão."); }
+        }
+        loadingMessage.classList.add("hidden");
+      })();
+    } else {
+      loadWFS()
+        .catch(()=> fallbackGeoJSON())
+        .catch(e=>{ console.error("All data loading methods failed:", e); showError("Não foi possível carregar os dados. Tente novamente mais tarde."); })
+        .finally(()=> loadingMessage.classList.add("hidden"));
+    }
+
+    function loadWFS(){
+      return esriRequest(wfsUrl,{ responseType:"json", query:{} }).then(r=>{
+        const gj=r.data; if(!gj || !gj.features) throw new Error("Sem dados GeoJSON válidos.");
+        ingestFeatures(gj.features);
+      });
+    }
+    function fallbackGeoJSON(){
+      return new Promise((resolve,reject)=>{
+        try{
+          const layer = new GeoJSONLayer({
+            url: wfsUrl,
+            title: "Pontos de água (WFS → GeoJSON)",
+            popupTemplate:{ title:"{nome}", content:(e)=> createPopupContent(e.graphic.attributes) }
+          });
+          layer.when(()=>{
+            layer.queryFeatures().then(fs=>{
+              ingestFeatures(fs.features.map(f=>({
+                geometry:{ coordinates:[f.geometry.longitude, f.geometry.latitude] },
+                properties:f.attributes
+              })));
+              resolve();
+            },reject);
+          },reject);
+          map.add(layer);
+        } catch(e){ reject(e); }
+      });
+    }
+
+    function ingestFeatures(features){
+      for(const feat of features){
+        const coords = feat.geometry && feat.geometry.coordinates;
+        if(!coords || coords.length<2) continue;
+        const lon = Number(coords[0]), lat = Number(coords[1]);
+        const pt = new Point({ longitude:lon, latitude:lat });
+        const g = new Graphic({
+          geometry:pt, attributes: feat.properties || {}, symbol: waterPointSymbol,
+          popupTemplate:{
+            title:(feat.properties && (feat.properties.nome || feat.properties.tipologia)) || "Ponto de água",
+            content:(event)=>{
+              const geom=event.graphic.geometry, attrs=event.graphic.attributes||{};
+              const lat = Number(geom.latitude).toFixed(6), lon = Number(geom.longitude).toFixed(6);
+              const wazeUrl  = "https://waze.com/ul?ll="+lat+"%2C"+lon+"&navigate=yes&zoom=17";
+              const gmapsUrl = "https://www.google.com/maps/dir/?api=1&destination="+lat+","+lon;
+              return createPopupContent(attrs)
+                     + "<div style='margin-top:8px; display:flex; gap:10px; align-items:center;'>"
+                     + "<a href='"+wazeUrl+"' target='_blank' rel='noopener noreferrer'>Waze</a>"
+                     + "<a href='"+gmapsUrl+"' target='_blank' rel='noopener noreferrer' style='margin-left:8px;'>Google</a>"
+                     + "</div>";
+            }
+          }
+        });
+        allPoints.push(g); pointsLayer.add(g);
+
+        const distrito = (feat.properties && feat.properties.distrito) || "Desconhecido";
+        const concelho = (feat.properties && feat.properties.concelho) || "Desconhecido";
+        uniqueDistritos.add(distrito);
+        if(!distritoConcelhoMap[distrito]) distritoConcelhoMap[distrito]=new Set();
+        distritoConcelhoMap[distrito].add(concelho);
+      }
+      for(const d of Array.from(uniqueDistritos).sort()){ distritoFilter.appendChild(new Option(d,d)); }
+      if(view.center) findNearest(view.center);
+    }
+
+    distritoFilter.addEventListener("change", function(){
+      const sel=this.value; concelhoFilter.innerHTML='<option value="">Todos os concelhos</option>';
+      if(sel && distritoConcelhoMap[sel]) Array.from(distritoConcelhoMap[sel]).sort().forEach(c=> concelhoFilter.appendChild(new Option(c,c)));
+    });
+
+    applyFilter.addEventListener("click", function(){
+      filterLoading.classList.remove("hidden");
+      setTimeout(()=>{
+        const distrito=distritoFilter.value, concelho=concelhoFilter.value;
+        pointsLayer.removeAll(); filteredPointsLayer.removeAll();
+        for(const g of allPoints){
+          const a=g.attributes||{};
+          const matchD=!distrito || a.distrito===distrito;
+          const matchC=!concelho || a.concelho===concelho;
+          if(matchD && matchC){ const fg=g.clone(); fg.symbol=filteredPointSymbol; filteredPointsLayer.add(fg); }
+        }
+        const sel = filteredPointsLayer.graphics.items;
+        if(sel.length) fitToGraphics(sel,60);
+        if(view.center) findNearest(view.center);
+        filterLoading.classList.add("hidden");
+      },100);
+    });
+
+    resetFilter.addEventListener("click", function(){
+      distritoFilter.value=""; concelhoFilter.value="";
+      concelhoFilter.innerHTML='<option value="">Todos os concelhos</option>';
+      pointsLayer.removeAll(); filteredPointsLayer.removeAll();
+      for(const g of allPoints) pointsLayer.add(g);
+      const all = pointsLayer.graphics.items;
+      if(all.length) fitToGraphics(all,60);
+      if(view.center) findNearest(view.center);
+    });
+
+    function fitToGraphics(graphics, padding=40){
+      if(!graphics || !graphics.length) return;
+      let xmin=Infinity, ymin=Infinity, xmax=-Infinity, ymax=-Infinity;
+      for(const g of graphics){
+        const geom=g.geometry; if(!geom) continue;
+        const x = geom.longitude ?? geom.x, y = geom.latitude ?? geom.y;
+        if(typeof x!=='number' || typeof y!=='number') continue;
+        if(x<xmin) xmin=x; if(y<ymin) ymin=y; if(x>xmax) xmax=x; if(y>ymax) ymax=y;
+      }
+      if(!isFinite(xmin)||!isFinite(ymin)||!isFinite(xmax)||!isFinite(ymax)) return;
+      const ext = new Extent({ xmin, ymin, xmax, ymax, spatialReference:{ wkid:4326 } });
+      view.goTo({ target:ext, padding }).catch(()=>{});
+    }
+
+    /* Collapsible panels */
+    function togglePanel(panel, btn){
+      const collapsed = panel.dataset.state==="collapsed";
+      if(collapsed){
+        panel.dataset.state="expanded"; panel.style.maxHeight="50%"; panel.style.opacity="1"; panel.style.transform="translateY(0)";
+        btn.textContent = (btn.id==="toggleInfo" ? "📋" : "⚙️");
+      } else {
+        panel.dataset.state="collapsed"; panel.style.maxHeight="24px"; panel.style.opacity="0.7"; panel.style.transform="translateY(0)";
+        btn.textContent="▶";
+      }
+    }
+    toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
+    toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
+
+    /* Nearest points (con reactiveUtils invece di view.watch) */
+    function haversineMeters(a,b){
+      const R=6371000, toRad=d=>d*Math.PI/180;
+      const dLat=toRad(b.latitude-a.latitude), dLon=toRad(b.longitude-a.longitude);
+      const lat1=toRad(a.latitude), lat2=toRad(b.latitude);
+      const s=Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+      return Math.round(2*R*Math.asin(Math.sqrt(s)));
+    }
+    function buildSpatialGrid(points, gridSize=0.5){
+      spatialGrid={};
+      for(const p of points){
+        const lon=p.geometry.longitude, lat=p.geometry.latitude;
+        const gx=Math.floor(lon/gridSize), gy=Math.floor(lat/gridSize);
+        const key=`${gx},${gy}`;
+        if(!spatialGrid[key]) spatialGrid[key]=[];
+        spatialGrid[key].push(p);
+      }
+    }
+    function findNearest(pt){
+      if(!allPoints.length) return;
+      linesLayer.removeAll();
+      if(Object.keys(spatialGrid).length===0) buildSpatialGrid(allPoints);
+
+      const active = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : allPoints;
+      const gridSize=0.5, gx=Math.floor(pt.longitude/gridSize), gy=Math.floor(pt.latitude/gridSize);
+      let candidates=[];
+      for(let x=gx-2; x<=gx+2; x++){
+        for(let y=gy-2; y<=gy+2; y++){
+          const key=`${x},${y}`;
+          if(spatialGrid[key]){
+            for(const g of spatialGrid[key]) if(active.includes(g)){
+              candidates.push({ feature:g, distance:haversineMeters(pt, g.geometry) });
+            }
+          }
+        }
+      }
+      if(candidates.length<4) candidates = active.map(g=>({ feature:g, distance:haversineMeters(pt, g.geometry) }));
+      nearest = candidates.filter(o=> o.distance<=10000).sort((a,b)=>a.distance-b.distance).slice(0,4);
+      for(const item of nearest){
+        const line=new Polyline({ paths:[[pt.longitude,pt.latitude],[item.feature.geometry.longitude,item.feature.geometry.latitude]], spatialReference:{ wkid:4326 } });
+        linesLayer.add(new Graphic({ geometry:line, symbol:lineSymbol }));
+      }
+      renderInfo();
+    }
+    function renderInfo(){
+      let html="<h4 style='margin:4px 0 6px'>Pontos de água mais próximos <small>(até 10 km)</small>:</h4>";
+      if(!nearest.length){ html+="<p style='margin:0'>Nenhum ponto encontrado.</p>"; }
+      else {
+        html+="<ul style='margin:0; padding-left:16px; font-size:12px;'>";
+        for(const o of nearest){
+          const a=o.feature.attributes||{}; const name=a.nomenome||a.nome||"Sem nome";
+          const type=a.tipologia?(" ("+a.tipologia+")"):"";
+          html+="<li>"+name+type+" — "+o.distance+" m</li>";
+        }
+        html+="</ul>";
+      }
+      infoContent.innerHTML=html;
+    }
+
+    /* Pointer + center listener con reactiveUtils */
+    view.on("pointer-move", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    view.on("pointer-down", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
+    reactiveUtils.watch(()=> view.center && view.center.clone(), (val)=>{ if(val) findNearest(val); }, { initial:true });
+
+    /* Start collapsed on small screens */
+    const smallScreen = Math.max(window.innerWidth, window.innerHeight) < 700;
+    if(smallScreen){ togglePanel(infoPanel, toggleInfo); togglePanel(filterPanel, toggleFilter); }
+
+    /* FIRE LAYER — vero VIIRS, nessuna query nell’URL */
+    function loadFireLayer(){
+      // avviso CORS solo quando si è su GitHub Pages
+      if (window.location.hostname.endsWith("github.io")) {
+        document.getElementById("corsWarning").style.display = "block";
+      }
+
+      // Se già presente, non duplicare
+      if(fireLayer && map.layers.includes(fireLayer)) return;
+
+      fireStatus.style.display = "block";
+      fireStatus.textContent = "A carregar dados de incêndios…";
+
+      fireLayer = new FeatureLayer({
+        url: fireServiceUrl,
+        title: "Incêndios VIIRS",
+        outFields: [],
+        popupEnabled: false,
+        renderer: {
+          type: "simple",
+          symbol: {
+            type: "simple-marker",
+            size: 6,
+            color: [255, 64, 0, 0.9],
+            outline: null   // niente contorno: icona “nuda”
+          }
+        }
+        // volendo: definitionExpression per ultime 24h usando campo data/ora
+      });
+
+      fireLayer.when(()=>{
+        fireStatus.textContent = "Dados de incêndio ativos (VIIRS)";
+      }).catch(err=>{
+        console.error("Falha FeatureLayer VIIRS:", err);
+        showError("Dados de incêndio não disponíveis (verifique CORS ou rete).");
+        // rollback stato
+        isFireLayerActive=false;
+        toggleFirePanel.setAttribute("aria-pressed","false");
+        fireStatus.style.display="none";
+        if(fireLayer){ map.remove(fireLayer); fireLayer=null; }
+      });
+
+      map.add(fireLayer);
+    }
+
+    function unloadFireLayer(){
+      if(fireLayer){ map.remove(fireLayer); fireLayer=null; }
+      fireStatus.style.display="none";
+    }
+
+    /* Toggle fuoco: cambia solo lo stato visivo del pulsante e carica/svuota il layer */
+    toggleFirePanel.addEventListener("click", ()=>{
+      isFireLayerActive = !isFireLayerActive;
+      toggleFirePanel.setAttribute("aria-pressed", String(isFireLayerActive));
+      if(isFireLayerActive){ loadFireLayer(); }
+      else { unloadFireLayer(); }
+    });
+
+    /* Eventi globali */
+    window.addEventListener("unhandledrejection", (e)=> {
+      console.warn("Unhandled rejection:", e.reason);
+    });
+
+  });
   </script>
 </body>
 </html>
