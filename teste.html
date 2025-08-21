@@ -43,7 +43,7 @@
 
     .toggle-chip {
       position: absolute;
-      top: 8px; /* Modificato da 4px a 8px per spostare in basso */
+      top: 4px;
       left: 4px;
       background: #f2f2f2;
       border: 1px solid #ddd;
@@ -57,7 +57,7 @@
 
     #toggleFirePanel {
       position: absolute;
-      top: 8px; /* Modificato da 4px a 8px per spostare in basso */
+      top: 4px;
       right: 4px;
       background: #f2f2f2;
       border: 1px solid #ddd;
@@ -283,7 +283,7 @@
   </div>
 
   <div id="filterPanel">
-    <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir"⚙️</button>
+    <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
     <strong style="display:block; margin-left: 22px; margin-bottom: 4px; font-size:8px;">Filtrar</strong>
     <select id="distritoFilter" aria-label="Filtrar por distrito">
       <option value="">Todos os distritos</option>
@@ -398,7 +398,7 @@
           }
         });
         
-        esriConfig.request.timeout = 30000; // Aumentato a 30s
+        esriConfig.request.timeout = 30000;
         esriConfig.request.useCors = true;
         
       } catch (e) {
@@ -1032,8 +1032,8 @@
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - daysToShow);
         
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
+        const startDateStr = formatDateForQuery(startDate);
+        const endDateStr = formatDateForQuery(endDate);
         
         where = `acq_date >= '${startDateStr}' AND acq_date <= '${endDateStr}'`;
         
@@ -1079,6 +1079,14 @@
           // Prova con un proxy CORS alternativo
           tryWithCorsProxy(queryUrl);
         });
+      }
+      
+      function formatDateForQuery(date) {
+        // Formatta la data nel formato YYYY-MM-DD per la query
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
       }
       
       function tryWithCorsProxy(queryUrl) {
@@ -1142,6 +1150,13 @@
               latitude: geometry.latitude,
               spatialReference: geometry.spatialReference || { wkid: 4326 }
             });
+          } else if (geometry.points && geometry.points.length > 0) {
+            // Gestione per geometrie multipunto
+            point = new Point({
+              x: geometry.points[0][0],
+              y: geometry.points[0][1],
+              spatialReference: geometry.spatialReference || { wkid: 4326 }
+            });
           } else {
             return; // Skip if no valid geometry
           }
@@ -1195,7 +1210,10 @@
         if (fireData.length === 0) return;
         
         const currentDateData = fireData[currentFireDateIndex];
-        fireDateDisplay.textContent = `Incêndios em ${formatDate(currentDateData.date)}`;
+        
+        // CORREZIONE: Formatta correttamente la data
+        const formattedDate = formatFireDate(currentDateData.date);
+        fireDateDisplay.textContent = `Incêndios em ${formattedDate}`;
         
         // Add graphics to layer
         fireLayer.addMany(currentDateData.graphics);
@@ -1205,9 +1223,45 @@
         fireProgressBar.style.width = `${progress}%`;
       }
       
-      function formatDate(dateStr) {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('pt-PT');
+      function formatFireDate(dateStr) {
+        // CORREZIONE: Gestione robusta della formattazione della data
+        if (!dateStr) return "Data desconhecida";
+        
+        try {
+          // Prova diversi formati di data
+          let date;
+          
+          if (dateStr.includes('/')) {
+            // Formato DD/MM/YYYY o MM/DD/YYYY
+            const parts = dateStr.split('/');
+            if (parts.length === 3) {
+              // Assumi formato YYYY/MM/DD o DD/MM/YYYY
+              if (parts[0].length === 4) {
+                // Formato YYYY/MM/DD
+                date = new Date(parts[0], parts[1] - 1, parts[2]);
+              } else {
+                // Formato DD/MM/YYYY
+                date = new Date(parts[2], parts[1] - 1, parts[0]);
+              }
+            }
+          } else if (dateStr.includes('-')) {
+            // Formato YYYY-MM-DD
+            date = new Date(dateStr);
+          } else {
+            // Prova a parsare direttamente
+            date = new Date(dateStr);
+          }
+          
+          // Verifica se la data è valida
+          if (isNaN(date.getTime())) {
+            return dateStr; // Ritorna la stringa originale se non può essere parsata
+          }
+          
+          return date.toLocaleDateString('pt-PT');
+        } catch (e) {
+          console.error("Error formatting date:", e, dateStr);
+          return dateStr; // Ritorna la stringa originale in caso di errore
+        }
       }
       
       function setupFirePlayerControls() {
