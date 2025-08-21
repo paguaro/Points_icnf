@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pontos de água ICNF</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <style>
+    html, body, #viewDiv { margin: 0; padding: 0; height: 100%; width: 100%; -webkit-text-size-adjust: 100%; }
+    .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select { font-size: 12px; line-height: 1.2; }
+    #infoPanel, #filterPanel, #firePanel {
+      position: absolute; background: #fff; padding: 6px 8px; border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.15); font-size: 8px; z-index: 10;
+      max-height: 50%; overflow-y: auto; transition: max-height .25s ease, opacity .25s ease, transform .25s ease;
+      will-change: max-height, opacity, transform; backdrop-filter: saturate(120%) blur(2px);
+    }
+    #infoPanel { top: 110px; right: 10px; width: min(260px, 42vw); }
+    #filterPanel { top: 130px; left: 10px; width: min(160px, 28vw); overflow: hidden; }
+    #firePanel { top: 170px; right: 10px; width: min(300px, 50vw); max-height: 60%; display: none; }
+    .toggle-chip { position: absolute; top: 4px; left: 4px; background: #f2f2f2; border: 1px solid #ddd;
+      cursor: pointer; border-radius: 6px; padding: 2px 6px; font-size: 14px; line-height: 1.1; user-select: none; }
+    #loadingMessage { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 1000; }
+    #loadingBox { background: #fff; padding: 12px 14px; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.2); font-size: 14px; }
+    #errorMessage { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: #d32f2f; color: white;
+      padding: 12px 16px; border-radius: 6px; z-index: 1001; box-shadow: 0 3px 10px rgba(0,0,0,0.2); display: none;
+      max-width: 80%; text-align: center; font-size: 14px; }
+    select, button { width: 100%; padding: 8px 10px; margin: 4px 0; box-sizing: border-box; font-size: 12px; border-radius: 8px; }
+    button { background-color: #0079c1; color: #fff; border: none; cursor: pointer; }
+    button:hover { background-color: #005a8c; }
+    .btn-ghost { background: #fff; color: #000; border: 1px solid #ccc; }
+    .hidden { display: none !important; }
+    .info-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .info-table th, .info-table td { text-align: left; padding: 2px 4px; border-bottom: 1px dotted #eee; vertical-align: top; word-break: break-word; }
+    .info-table th { width: 40%; color: #444; font-weight: 600; }
+    .custom-ui { display: flex; gap: 6px; align-items: center; background: transparent; border: 0; padding: 0; }
+    .custom-ui button { width: auto; min-width: 36px; padding: 8px; }
+    .esri-view { touch-action: pan-x pan-y; }
+    .filter-loading { display: inline-block; width: 16px; height: 16px; border: 2px solid #f3f3f3; border-top: 2px solid #0079c1;
+      border-radius: 50%; animation: spin 1s linear infinite; margin-left: 8px; vertical-align: middle; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    #fireHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #eee; }
+    #fireControls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+    .fire-control-row { display: flex; gap: 8px; align-items: center; }
+    .fire-control-row label { font-size: 12px; white-space: nowrap; }
+    .fire-control-row select { flex: 1; }
+    #firePlayer { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    #fireDateDisplay { font-size: 12px; text-align: center; margin-top: 8px; font-weight: bold; }
+    #fireProgress { flex: 1; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
+    #fireProgressBar { height: 100%; background: #ff5722; width: 0%; transition: width 0.3s ease; }
+    .fire-player-btn { background: none; border: none; font-size: 16px; cursor: pointer; color: #0079c1; padding: 4px; }
+    .fire-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 10px; }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .legend-color { width: 12px; height: 12px; border-radius: 50%; }
+  </style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+  <div id="infoPanel" aria-live="polite">
+    <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
+    <div id="infoContent"></div>
+    <button id="toggleFirePanel" class="toggle-chip" style="left: auto; right: 20px; bottom: 160px;" title="Mostrar dados de incêndios">🔥</button>
+  </div>
+  <div id="filterPanel">
+    <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
+    <strong style="display:block; margin-left: 22px; margin-bottom: 4px; font-size:8px;">Filtrar</strong>
+    <select id="distritoFilter"><option value="">Todos os distritos</option></select>
+    <select id="concelhoFilter"><option value="">Todos os concelhos</option></select>
+    <div class="custom-ui"><button id="applyFilter">Aplicar</button><button id="resetFilter" class="btn-ghost">Repor</button></div>
+    <div id="filterLoading" class="filter-loading hidden"></div>
+  </div>
+  <div id="firePanel">
+    <div id="fireHeader"><h3 style="margin: 0; font-size: 14px;">Atividade de Incêndios</h3><button id="closeFirePanel" class="fire-player-btn" title="Fechar">✕</button></div>
+    <div id="fireControls">
+      <div class="fire-control-row"><label for="fireRegion">Região:</label><select id="fireRegion"><option value="iberian_peninsula">Península Ibérica</option><option value="europe">Europa</option><option value="global">Global</option></select></div>
+      <div class="fire-control-row"><label for="fireDays">Dias a mostrar:</label><select id="fireDays"><option value="3">3 dias</option><option value="5" selected>5 dias</option><option value="7">7 dias</option><option value="10">10 dias</option></select></div>
+    </div>
+    <div id="fireDateDisplay">Carregando dados...</div>
+    <div id="firePlayer">
+      <button id="firePrev" class="fire-player-btn">⏮</button>
+      <button id="firePlayPause" class="fire-player-btn">▶</button>
+      <button id="fireNext" class="fire-player-btn">⏭</button>
+      <div id="fireProgress"><div id="fireProgressBar"></div></div>
+    </div>
+    <div class="fire-legend">
+      <div class="legend-item"><div class="legend-color" style="background-color: #ffeb3b;"></div><span>Baixa intensidade</span></div>
+      <div class="legend-item"><div class="legend-color" style="background-color: #ff9800;"></div><span>Média intensidade</span></div>
+      <div class="legend-item"><div class="legend-color" style="background-color: #f44336;"></div><span>Alta intensidade</span></div>
+    </div>
+  </div>
+  <div id="loadingMessage"><div id="loadingBox">A carregar dados WFS…</div></div>
+  <div id="errorMessage"></div>
+
+  <script src="https://js.arcgis.com/4.33/"></script>
+  <script>
+    require([
+      "esri/config","esri/Map","esri/views/MapView","esri/layers/GraphicsLayer","esri/Graphic","esri/geometry/Point","esri/geometry/Polyline",
+      "esri/geometry/Extent","esri/symbols/SimpleMarkerSymbol","esri/symbols/SimpleLineSymbol","esri/widgets/BasemapGallery","esri/widgets/Expand",
+      "esri/widgets/Search","esri/request","esri/layers/GeoJSONLayer","esri/layers/FeatureLayer"
+    ], function(esriConfig,Map,MapView,GraphicsLayer,Graphic,Point,Polyline,Extent,SimpleMarkerSymbol,SimpleLineSymbol,BasemapGallery,Expand,Search,esriRequest,GeoJSONLayer,FeatureLayer){
+      // ... (tutta la parte precedente invariata, WFS, simboli, filtri ecc.)
+
+      // 🔧 Fire service URL
+      const fireServiceUrl = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0";
+
+      // ... (codice invariato fino a loadFireData)
+
+      function loadFireData() {
+        fireDateDisplay.textContent = "Carregando dados de incêndios...";
+        const region = fireRegion.value;
+        let geometry = null;
+        let where = "1=1";
+
+        if (region === "iberian_peninsula") {
+          geometry = { xmin: -9.5, ymin: 36, xmax: 3.3, ymax: 43.8, spatialReference: { wkid: 4326 } };
+        } else if (region === "europe") {
+          geometry = { xmin: -25, ymin: 35, xmax: 40, ymax: 71, spatialReference: { wkid: 4326 } };
+        }
+        // "global" → no geometry filter
+
+        // 🔧 Use Hours_Old instead of acq_date
+        const daysToShow = parseInt(fireDays.value);
+        const maxHours = daysToShow * 24;
+        where = `Hours_Old <= ${maxHours}`;
+
+        const layer = new FeatureLayer({ url: fireServiceUrl, definitionExpression: where, outFields: ["*"] });
+        const query = layer.createQuery();
+        query.geometry = geometry;
+        query.outFields = ["*"];
+        query.returnGeometry = true;
+        query.where = where;
+
+        layer.queryFeatures(query).then(result => {
+          processFireData(result.features);
+        }).catch(error => {
+          console.error("Error loading fire data:", error);
+          fireDateDisplay.textContent = "Erro ao carregar dados";
+          showError("Não foi possível carregar dados de incêndios");
+        });
+      }
+
+      // ... (il resto invariato: processFireData, showFireDataForCurrentDate, player ecc.)
+    });
+  </script>
+</body>
+</html>
