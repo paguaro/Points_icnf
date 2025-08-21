@@ -50,16 +50,17 @@
 
     #toggleFirePanel {
       position: absolute;
-      top: 4px;
-      right: 4px;
+      top: 60px; /* Spostata sotto il pannello info */
+      right: 10px;
       background: #f2f2f2;
       border: 1px solid #ddd;
       cursor: pointer;
       border-radius: 6px;
-      padding: 2px 6px;
+      padding: 6px 8px;
       font-size: 14px;
       line-height: 1.1;
       user-select: none;
+      z-index: 10;
     }
 
     #loadingMessage {
@@ -179,7 +180,7 @@
 
     .fire-status {
       position: absolute;
-      top: 60px;
+      top: 100px;
       right: 10px;
       background: #fff;
       padding: 8px 12px;
@@ -196,8 +197,9 @@
   <div id="infoPanel" aria-live="polite">
     <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
     <div id="infoContent"></div>
-    <button id="toggleFirePanel" title="Ativar/Desativar dados de incêndios">🔥</button>
   </div>
+
+  <button id="toggleFirePanel" title="Ativar/Desativar dados de incêndios">🔥 Incêndios</button>
 
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
@@ -269,7 +271,8 @@
         });
         
         esriConfig.request.timeout = 30000;
-        esriConfig.request.useCors = true;
+        // IMPORTANTE: Non usare credenziali per evitare problemi CORS
+        esriConfig.request.credentials = 'omit';
         
       } catch (e) {
         console.warn("CORS configuration error:", e);
@@ -666,6 +669,7 @@
           // Remove fire layer
           if (fireLayer) {
             map.remove(fireLayer);
+            fireLayer = null;
           }
           isFireLayerActive = false;
           fireStatus.style.display = 'none';
@@ -849,22 +853,8 @@
           url: fireServiceUrl,
           title: "Incêndios VIIRS",
           outFields: ["*"],
-          popupTemplate: {
-            title: "Incêndio {acq_date}",
-            content: function(event) {
-              const g = event.graphic;
-              const attrs = g.attributes || {};
-              return `
-                <div>
-                  <p><strong>Data:</strong> ${attrs.acq_date || 'N/A'}</p>
-                  <p><strong>Hora:</strong> ${attrs.acq_time || 'N/A'}</p>
-                  <p><strong>Intensidade (FRP):</strong> ${attrs.frp || 'N/A'} MW</p>
-                  <p><strong>Confiança:</strong> ${attrs.confidence || 'N/A'}%</p>
-                  <p><strong>Satélite:</strong> ${attrs.satellite || 'N/A'}</p>
-                </div>
-              `;
-            }
-          },
+          // IMPORTANTE: disabilita la popup per evitare problemi con la geometria
+          popupEnabled: false,
           renderer: {
             type: "simple",
             symbol: {
@@ -875,27 +865,7 @@
                 width: 1
               },
               size: 8
-            },
-            visualVariables: [
-              {
-                type: "size",
-                field: "frp",
-                stops: [
-                  { value: 0, size: 6 },
-                  { value: 10, size: 8 },
-                  { value: 50, size: 12 }
-                ]
-              },
-              {
-                type: "color",
-                field: "frp",
-                stops: [
-                  { value: 0, color: [255, 235, 59, 0.7] },   // Giallo per bassa intensità
-                  { value: 10, color: [255, 152, 0, 0.7] },   // Arancione per media intensità
-                  { value: 50, color: [244, 67, 54, 0.7] }    // Rosso per alta intensità
-                ]
-              }
-            ]
+            }
           }
         });
         
@@ -907,6 +877,17 @@
           if (status === "failed") {
             showError("Falha ao carregar dados de incêndios. Problema de CORS.");
             fireStatus.textContent = "Erro ao carregar dados de incêndio";
+            
+            // Ripristina lo stato del pulsante
+            isFireLayerActive = false;
+            fireStatus.style.display = 'none';
+            toggleFirePanel.style.backgroundColor = '#f2f2f2';
+            
+            // Rimuovi il layer fallito
+            if (fireLayer) {
+              map.remove(fireLayer);
+              fireLayer = null;
+            }
           }
         });
       }
