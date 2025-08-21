@@ -9,13 +9,12 @@
   html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
   .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select { font-size:12px; line-height:1.2; }
 
-  /* Barra icone (GPS + FUOCO) in alto a destra */
-  .iconbar { position:absolute; top:10px; right:10px; z-index:6; display:flex; gap:6px; align-items:center; }
+  /* Bottoni “nudi” dentro la UI di ArcGIS (niente cornice) */
   .iconbtn { background:transparent; border:none; cursor:pointer; padding:6px; min-width:36px; font-size:22px; line-height:1; border-radius:8px; }
-  /* FUOCO “nudo”: OFF=grigio, ON=colore naturale */
   #btnFire { filter:grayscale(1) brightness(.8); transition:filter .15s ease, transform .08s ease; }
   #btnFire[aria-pressed="true"] { filter:none; }
   .iconbtn:active { transform:scale(.96); }
+  .toolbar { display:flex; gap:6px; align-items:center; } /* contenitore UI per i bottoni */
 
   /* Pannelli */
   #infoPanel, #filterPanel {
@@ -41,31 +40,20 @@
   .info-table th, .info-table td { text-align:left; padding:2px 4px; border-bottom:1px dotted #eee; vertical-align:top; word-break:break-word; }
   .info-table th { width:40%; color:#444; font-weight:600; }
 
-  /* Toast */
+  /* Toast (in alto a destra, vicino alle icone) */
   #toast {
-    position:absolute; top:10px; left:50%; transform:translateX(-50%);
-    background:#323232; color:#fff; padding:8px 12px; border-radius:6px;
-    z-index:10; display:none; font-size:13px; box-shadow:0 3px 10px rgba(0,0,0,.2);
+    position:absolute; top:62px; right:10px;
+    background:#323232; color:#fff; padding:6px 10px; border-radius:6px;
+    z-index:10; display:none; font-size:12px; box-shadow:0 3px 10px rgba(0,0,0,.2);
   }
-  /* Messaggio errore */
-  #error {
-    position:absolute; top:50px; left:50%; transform:translateX(-50%);
-    background:#d32f2f; color:#fff; padding:8px 12px; border-radius:6px;
-    z-index:10; display:none; font-size:13px; box-shadow:0 3px 10px rgba(0,0,0,.2);
-  }
-  /* Loader iniziale */
+
+  /* Loader overlay con contatore */
   #loadingMessage { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:7; }
-  #loadingBox { background:#fff; padding:12px 14px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
+  #loadingBox { background:#fff; padding:10px 12px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
 </style>
 </head>
 <body>
   <div id="viewDiv"></div>
-
-  <!-- Barra icone: GPS + FUOCO -->
-  <div class="iconbar">
-    <button id="btnGPS" class="iconbtn" title="Localizar-me">📍</button>
-    <button id="btnFire" class="iconbtn" title="Incêndios (VIIRS)" aria-pressed="false">🔥</button>
-  </div>
 
   <!-- Pannello info “punti vicini” -->
   <div id="infoPanel" aria-live="polite">
@@ -73,7 +61,7 @@
     <div id="infoContent"></div>
   </div>
 
-  <!-- Pannello filtro (ricerca puntI d'acqua) -->
+  <!-- Pannello filtro (ricerca punti d'acqua) -->
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
     <strong class="panel-title">Filtrar</strong>
@@ -85,9 +73,8 @@
     </div>
   </div>
 
-  <!-- Toast + Error + Loader -->
+  <!-- Toast + Loader -->
   <div id="toast"></div>
-  <div id="error"></div>
   <div id="loadingMessage"><div id="loadingBox">A carregar dados…</div></div>
 
   <script src="https://js.arcgis.com/4.33/"></script>
@@ -112,6 +99,16 @@
     const bg = new BasemapGallery({ view });
     view.ui.add(new Expand({ view, content:bg, expandIconClass:"esri-icon-basemap" }), "bottom-right");
 
+    /* Toolbar dentro alla UI di ArcGIS (no posizionamento assoluto) */
+    const toolbar = document.createElement("div");
+    toolbar.className = "toolbar esri-component";
+    const btnGPS = document.createElement("button");
+    btnGPS.id="btnGPS"; btnGPS.className="iconbtn"; btnGPS.title="Localizar-me"; btnGPS.textContent="📍";
+    const btnFire = document.createElement("button");
+    btnFire.id="btnFire"; btnFire.className="iconbtn"; btnFire.title="Incêndios (VIIRS)"; btnFire.textContent="🔥"; btnFire.setAttribute("aria-pressed","false");
+    toolbar.appendChild(btnGPS); toolbar.appendChild(btnFire);
+    view.ui.add(toolbar, { position:"top-right", index:0 });
+
     /* ====== LAYERS ====== */
     const waterLayer = new GraphicsLayer(); map.add(waterLayer);
     const filteredPointsLayer = new GraphicsLayer(); map.add(filteredPointsLayer);
@@ -119,9 +116,7 @@
     const locLayer = new GraphicsLayer(); map.add(locLayer);
     const viirsLayer = new GraphicsLayer(); map.add(viirsLayer);
 
-    /* ====== UI elementi ====== */
-    const btnGPS = document.getElementById("btnGPS");
-    const btnFire = document.getElementById("btnFire");
+    /* ====== UI refs & stato ====== */
     const infoPanel = document.getElementById("infoPanel");
     const infoContent = document.getElementById("infoContent");
     const toggleInfo = document.getElementById("toggleInfo");
@@ -132,51 +127,46 @@
     const applyFilter = document.getElementById("applyFilter");
     const resetFilter = document.getElementById("resetFilter");
     const toast = document.getElementById("toast");
-    const errorBox = document.getElementById("error");
     const loadingMsg = document.getElementById("loadingMessage");
 
-    /* ====== Stato ====== */
-    const allPoints = [];      // Graphics dei punti acqua
-    const distritoConcelho = {};// mapa distrito -> Set(concelhos)
-    const uniqueDistritos = new Set();
-    let spatialGrid = {};      // accelerazione per nearest
-    let nearest = [];          // lista punti vicini correnti
+    let loaderCount = 0;
+    function showLoader(txt){
+      if(txt) document.getElementById("loadingBox").textContent = txt;
+      loaderCount++; loadingMsg.style.display="grid";
+    }
+    function hideLoader(force=false){
+      loaderCount = force ? 0 : Math.max(0, loaderCount-1);
+      if(loaderCount===0) loadingMsg.style.display="none";
+    }
 
-    /* ====== Simboli ====== */
+    function showToast(msg, ms=1800){
+      toast.textContent = msg; toast.style.display = "block";
+      clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display = "none", ms);
+    }
+
+    const allPoints = [];
+    const distritoConcelho = {};
+    const uniqueDistritos = new Set();
+    let spatialGrid = {};
+    let nearest = [];
+
     const symWater = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[80,220,255], width:1 }, size:5 });
     const symFiltered = new SimpleMarkerSymbol({ color:[255,64,64,0.9], outline:{ color:[255,230,120], width:1 }, size:6 });
     const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9], outline:{ color:[255,255,255], width:2 }, size:10 });
     const symLine = new SimpleLineSymbol({ color:[255,0,0,0.6], width:1.5, style:"short-dash" });
-    const symFire = { type:"simple-marker", size:6, color:[255,64,0,0.9], outline:null }; // “nudo”
-
-    /* ====== Util ====== */
-    function showToast(msg, ms=2000){
-      toast.textContent = msg; toast.style.display = "block";
-      clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display = "none", ms);
-    }
-    function showError(msg, ms=5000){
-      errorBox.textContent = msg; errorBox.style.display = "block";
-      clearTimeout(showError._t); showError._t = setTimeout(()=> errorBox.style.display = "none", ms);
-    }
-
-    function togglePanel(panel, btn){
-      const collapsed = panel.dataset.state==="collapsed";
-      if(collapsed){ panel.dataset.state="expanded"; panel.style.maxHeight="50%"; btn.textContent = (btn.id==="toggleInfo" ? "📋" : "⚙️"); }
-      else { panel.dataset.state="collapsed"; panel.style.maxHeight="24px"; btn.textContent="▶"; }
-    }
-    toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
-    toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
+    const symFire = { type:"simple-marker", size:6, color:[255,64,0,0.9], outline:null };
 
     /* ====== Caricamento punti acqua (ICNF WFS) ====== */
     const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
+    showLoader("A carregar dados…");
     esriRequest(wfsUrl, { responseType:"json" })
       .then(r=>{
         const gj=r.data; if(!gj?.features) throw new Error("GeoJSON vazio.");
         ingestWater(gj.features);
       })
-      .catch(e=> { console.warn(e); showError("Falha ao carregar pontos de água."); })
-      .finally(()=> loadingMsg.classList.add("hidden"));
+      .catch(e=> { console.warn(e); showToast("Falha ao carregar pontos de água."); })
+      .finally(()=> hideLoader(true)); // spegni comunque
 
     function ingestWater(features){
       for(const f of features){
@@ -326,7 +316,6 @@
       infoContent.innerHTML=html;
     }
 
-    // aggiorna “nearest” con interazioni basilari
     view.on("pointer-move", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
     view.on("pointer-down", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
     view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
@@ -334,7 +323,7 @@
 
     /* ====== GPS ====== */
     btnGPS.addEventListener("click", ()=>{
-      if(!navigator.geolocation) return showError("Geolocalização não suportada.");
+      if(!navigator.geolocation){ showToast("Geolocalização não suportada."); return; }
       navigator.geolocation.getCurrentPosition(
         p=>{
           const pt = new Point({ longitude:p.coords.longitude, latitude:p.coords.latitude });
@@ -344,18 +333,18 @@
           showToast("Localização definida");
           findNearest(pt);
         },
-        ()=> showError("Não foi possível obter a localização."),
+        ()=> showToast("Não foi possível obter a localização."),
         { enableHighAccuracy:true, maximumAge:30000, timeout:10000 }
       );
     });
 
-    /* ====== VIIRS (GeoJSON via fetch senza credenziali; “tutto” senza filtri) ====== */
+    /* ====== VIIRS (GeoJSON via fetch, tutto) ====== */
     const VIIRS_QUERY_BASE =
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
 
     function viirsGeoJsonUrl(){
       const qs = new URLSearchParams({
-        where: "1=1",     // carichiamo tutto (niente selettori data)
+        where: "1=1",     // carica tutto
         outFields: "*",
         outSR: "4326",
         f: "geojson"
@@ -365,22 +354,20 @@
 
     async function loadVIIRSAll(){
       try{
-        const res = await fetch(viirsGeoJsonUrl(), {
-          method: "GET",
-          mode: "cors",
-          credentials: "omit",  // evita CORS con A-C-A-O: *
-          cache: "no-store"
-        });
+        showLoader("A carregar incêndios…");
+        const res = await fetch(viirsGeoJsonUrl(), { method:"GET", mode:"cors", credentials:"omit", cache:"no-store" });
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const gj = await res.json();
-        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON non valido");
+        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON não válido");
         drawVIIRS(gj.features);
         showToast("Incêndios VIIRS: ON");
       } catch(err){
         console.error("VIIRS fetch error:", err);
-        showError("Falha ao carregar dados de incêndios (VIIRS).");
+        showToast("Falha ao carregar incêndios");
         clearVIIRS();
         btnFire.setAttribute("aria-pressed","false");
+      } finally {
+        hideLoader();
       }
     }
 
@@ -408,10 +395,22 @@
         showToast("Incêndios VIIRS: OFF");
       } else {
         btnFire.setAttribute("aria-pressed","true");
-        loadVIIRSAll(); // carica tutto (nessun selettore date)
+        loadVIIRSAll(); // carica tutto (nessun selettore data)
       }
     });
 
+    /* Collapsible pannelli */
+    function togglePanel(panel, btn){
+      const collapsed = panel.dataset.state==="collapsed";
+      if(collapsed){ panel.dataset.state="expanded"; panel.style.maxHeight="50%"; btn.textContent = (btn.id==="toggleInfo" ? "📋" : "⚙️"); }
+      else { panel.dataset.state="collapsed"; panel.style.maxHeight="24px"; btn.textContent="▶"; }
+    }
+    toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
+    toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
+
+    // Su schermi piccoli, parto già “compatti”
+    const small = Math.max(window.innerWidth, window.innerHeight) < 700;
+    if(small){ togglePanel(infoPanel, toggleInfo); togglePanel(filterPanel, toggleFilter); }
   });
   </script>
 </body>
