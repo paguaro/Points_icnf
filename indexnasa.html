@@ -551,12 +551,13 @@
       const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
       // Fire service URL
-      const fireServiceUrl = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0";
+      const fireServiceUrl = "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/1";
 
       // iOS Chrome (CriOS) has quirks with esri/request/GeoJSONLayer. Use multi-route plain fetch only there.
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
       const isChromeIOS = /CriOS/.test(navigator.userAgent) && isIOS;
 
+      
       if (isChromeIOS) {
         (async () => {
           const urls = [
@@ -1188,4 +1189,5 @@
     });
   </script>
 </body>
+
 </html>
