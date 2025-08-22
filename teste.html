@@ -9,8 +9,14 @@
   html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
   .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select { font-size:12px; line-height:1.2; }
 
-  /* Bottoni stile ArcGIS */
-  .esri-btn-icon.esri-widget.esri-widget--button { display:flex; align-items:center; justify-content:center; font-size:22px; width:36px; height:36px; }
+  /* Widget icona (GPS / Reset) */
+  .esri-btn-icon.esri-widget.esri-widget--button {
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px; /* un po’ più piccolo */
+    width:32px; height:32px; border-radius:8px;
+    box-shadow:0 2px 6px rgba(0,0,0,.25); /* drop shadow */
+    background:#fff;
+  }
   .esri-btn-icon:active { transform: scale(.96); }
 
   /* FIAMMA “nuda”: OFF=grigio, ON=colore naturale */
@@ -31,12 +37,10 @@
   #infoPanel { top:110px; right:10px; width:min(260px,42vw); }
   #filterPanel { top:130px; left:10px; width:min(180px,32vw); }
 
-  /* “Chip” collapse in alto a sinistra del pannello */
   .toggle-chip {
     position:absolute; top:4px; left:6px; background:#f2f2f2; border:1px solid #ddd;
     cursor:pointer; border-radius:8px; padding:2px 6px; font-size:14px; line-height:1.1; user-select:none;
   }
-
   .panel-title { margin:0 32px 6px 32px; font-size:11px; font-weight:700; text-align:center; color:#0b4f71; }
 
   select, .btn { width:100%; padding:8px 10px; margin:4px 0; box-sizing:border-box; font-size:12px; border-radius:8px; }
@@ -71,7 +75,7 @@
     <div id="infoContent"></div>
   </div>
 
-  <!-- Pannello filtro (ricerca punti d'acqua) -->
+  <!-- Pannello filtro -->
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
     <strong class="panel-title">Filtrar</strong>
@@ -98,14 +102,14 @@
   ], function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,Extent,
               SimpleMarkerSymbol,SimpleLineSymbol,Search,BasemapGallery,Expand){
 
-    /* ====== MAPPA & UI BASE ====== */
+    /* ====== MAPPA & UI ====== */
     const map = new Map({ basemap: "streets-navigation-vector" });
     const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7, popupEnabled:true });
 
     const search = new Search({ view }); view.ui.add(search, { position:"top-right", index:1 });
     const bg = new BasemapGallery({ view }); view.ui.add(new Expand({ view, content:bg, expandIconClass:"esri-icon-basemap" }), "bottom-right");
 
-    /* GPS (grande) nella UI + bottone “centra mappa” sotto lo zoom */
+    // GPS widget (più piccolo + shadow) e Reset extent
     const gpsBtn = document.createElement("button");
     gpsBtn.className = "esri-btn-icon esri-widget esri-widget--button";
     gpsBtn.title = "Localizar-me"; gpsBtn.textContent = "📍";
@@ -127,7 +131,7 @@
     resetBtn.className = "esri-btn-icon esri-widget esri-widget--button";
     resetBtn.title = "Repor extensão inicial"; resetBtn.textContent = "⤾";
     resetBtn.onclick = ()=> view.goTo({ center:[-8,39.5], zoom:7 });
-    view.ui.add(resetBtn, "top-left"); // appare sotto lo zoom
+    view.ui.add(resetBtn, "top-left"); // sotto allo zoom
 
     /* ====== LAYERS ====== */
     const waterLayer = new GraphicsLayer(); map.add(waterLayer);
@@ -136,7 +140,7 @@
     const locLayer = new GraphicsLayer(); map.add(locLayer);
     const viirsLayer = new GraphicsLayer(); map.add(viirsLayer);
 
-    /* ====== UI refs & stato ====== */
+    /* ====== RIF & STATO ====== */
     const infoPanel = document.getElementById("infoPanel");
     const infoContent = document.getElementById("infoContent");
     const toggleInfo = document.getElementById("toggleInfo");
@@ -151,18 +155,9 @@
     const loadingMsg = document.getElementById("loadingMessage");
 
     let loaderCount = 0;
-    function showLoader(txt){
-      if(txt) document.getElementById("loadingBox").textContent = txt;
-      loaderCount++; loadingMsg.style.display="grid";
-    }
-    function hideLoader(force=false){
-      loaderCount = force ? 0 : Math.max(0, loaderCount-1);
-      if(loaderCount===0) loadingMsg.style.display="none";
-    }
-    function showToast(msg, ms=1800){
-      toast.textContent = msg; toast.style.display = "block";
-      clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display = "none", ms);
-    }
+    function showLoader(txt){ if(txt) document.getElementById("loadingBox").textContent = txt; loaderCount++; loadingMsg.style.display="grid"; }
+    function hideLoader(force=false){ loaderCount = force ? 0 : Math.max(0, loaderCount-1); if(loaderCount===0) loadingMsg.style.display="none"; }
+    function showToast(msg, ms=1800){ toast.textContent = msg; toast.style.display = "block"; clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display = "none", ms); }
 
     const allPoints = [];
     const distritoConcelho = {};
@@ -176,16 +171,12 @@
     const symLine = new SimpleLineSymbol({ color:[255,0,0,0.6], width:1.5, style:"short-dash" });
     const symFire = { type:"simple-marker", size:6, color:[255,64,0,0.9], outline:null };
 
-    /* ====== Punti acqua (ICNF WFS) ====== */
+    /* ====== ICNF WFS ====== */
     const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
-
     showLoader("A carregar dados…");
     fetch(wfsUrl, { credentials:"omit", cache:"no-store" })
       .then(r=>r.json())
-      .then(gj=>{
-        if(!gj?.features) throw new Error("GeoJSON vazio.");
-        ingestWater(gj.features);
-      })
+      .then(gj=>{ if(!gj?.features) throw new Error("GeoJSON vazio."); ingestWater(gj.features); })
       .catch(e=> { console.warn(e); showToast("Falha ao carregar pontos de água."); })
       .finally(()=> hideLoader(true));
 
@@ -235,33 +226,27 @@
       return html;
     }
 
-    /* ====== Filtro distritos/concelhos ====== */
+    /* ====== Filtri ====== */
     distritoFilter.addEventListener("change", function(){
       concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
       const s = distritoConcelho[this.value];
       if(s) Array.from(s).sort().forEach(c=> concelhoFilter.appendChild(new Option(c,c)));
     });
-
     applyFilter.addEventListener("click", ()=>{
       filteredPointsLayer.removeAll();
       const d = distritoFilter.value, c = concelhoFilter.value;
-      const source = allPoints;
-      for(const g of source){
+      for(const g of allPoints){
         const a=g.attributes||{};
         if((!d || a.distrito===d) && (!c || a.concelho===c)){
           const gg = g.clone(); gg.symbol = symFiltered; filteredPointsLayer.add(gg);
         }
       }
       const tgt = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : waterLayer.graphics.items;
-      fitToGraphics(tgt, 60);
-      if(view.center) findNearest(view.center);
+      fitToGraphics(tgt, 60); if(view.center) findNearest(view.center);
     });
-
     resetFilter.addEventListener("click", ()=>{
       distritoFilter.value=""; concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
-      filteredPointsLayer.removeAll();
-      fitToGraphics(waterLayer.graphics.items, 60);
-      if(view.center) findNearest(view.center);
+      filteredPointsLayer.removeAll(); fitToGraphics(waterLayer.graphics.items, 60); if(view.center) findNearest(view.center);
     });
 
     function fitToGraphics(graphics, padding=40){
@@ -278,7 +263,7 @@
       view.goTo({ target:ext, padding }).catch(()=>{});
     }
 
-    /* ====== Nearest (punti acqua) ====== */
+    /* ====== Nearest ====== */
     function buildSpatialGrid(points, gridSize=0.5){
       spatialGrid={};
       for(const p of points){
@@ -332,23 +317,16 @@
       html+="</ul>";
       infoContent.innerHTML=html;
     }
-
     view.on("pointer-move", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
     view.on("pointer-down", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
     view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
     view.when(()=>{ if(view.center) findNearest(view.center); });
 
-    /* ====== VIIRS (GeoJSON via fetch, tutto) ====== */
+    /* ====== VIIRS (GeoJSON) ====== */
     const VIIRS_QUERY_BASE =
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
-
     function viirsGeoJsonUrl(){
-      const qs = new URLSearchParams({
-        where: "1=1",
-        outFields: "*",
-        outSR: "4326",
-        f: "geojson"
-      }).toString();
+      const qs = new URLSearchParams({ where:"1=1", outFields:"*", outSR:"4326", f:"geojson" }).toString();
       return `${VIIRS_QUERY_BASE}?${qs}`;
     }
 
@@ -366,74 +344,116 @@
         showToast("Falha ao carregar incêndios");
         clearVIIRS();
         btnFireHeader.setAttribute("aria-pressed","false");
-      } finally {
-        hideLoader();
-      }
+      } finally { hideLoader(); }
     }
-
     function drawVIIRS(features){
       viirsLayer.removeAll();
       for(const f of features){
-        const c = f.geometry && f.geometry.coordinates;
-        if(!c) continue;
+        const c = f.geometry && f.geometry.coordinates; if(!c) continue;
         const attrs = f.properties || {};
         viirsLayer.add(new Graphic({
           geometry: { type:"point", longitude:+c[0], latitude:+c[1] },
           attributes: attrs,
           symbol: symFire,
-          popupTemplate: {
-            title: "VIIRS hotspot",
-            content: viirsPopupContent(attrs)
-          }
+          popupTemplate: { title:"VIIRS hotspot", content: viirsPopupContent(attrs) }
         }));
       }
     }
     function clearVIIRS(){ viirsLayer.removeAll(); }
 
-    // Popup VIIRS compatto: data/ora locale, FRP, brightness, day/night
-    function viirsPopupContent(a){
-      const dt = viirsDate(a);
-      const frp = a.frp!=null ? Number(a.frp).toFixed(1)+" MW" : "—";
-      const bright = a.brightness!=null ? Number(a.brightness).toFixed(0)+" K" : (a.brightness_ti4!=null ? Number(a.brightness_ti4).toFixed(0)+" K" : "—");
-      const dn = a.daynight || a.DayNight || "—";
-      const conf = a.confidence!=null ? a.confidence : (a.confidence_day!=null ? a.confidence_day : (a.confidence_night!=null ? a.confidence_night : null));
-      const confTxt = conf!=null ? String(conf) : "—";
-      return `
-        <table class="info-table"><tbody>
-          <tr><th>Data/ora</th><td>${dt ? dt.toLocaleString() : "—"}</td></tr>
-          <tr><th>FRP</th><td>${frp}</td></tr>
-          <tr><th>Brightness</th><td>${bright}</td></tr>
-          <tr><th>Day/Night</th><td>${dn}</td></tr>
-          <tr><th>Confidence</th><td>${confTxt}</td></tr>
-        </tbody></table>
-      `;
-    }
+    // Parser data/ora ROBUSTO (ISO / epoch sec+ms / "YYYY-MM-DD") + acq_time (HHMM o minuti)
     function viirsDate(a){
-      // acq_date (YYYY-MM-DD) + acq_time (HHMM)
       const dkey = pickKey(a, /^(acq[_]?date)$/i);
-      if(dkey){
-        try{
-          const [Y,M,D] = String(a[dkey]).split(/\D+/).map(Number);
-          let hh=0, mm=0;
-          const tkey = pickKey(a, /^(acq[_]?time)$/i);
-          if(tkey){
-            const t=String(a[tkey]).padStart(4,"0");
-            hh=+t.slice(0,2)||0; mm=+t.slice(2,4)||0;
+      const tkey = pickKey(a, /^(acq[_]?time)$/i);
+      let hh = 0, mm = 0;
+
+      if (tkey != null && a[tkey] != null) {
+        const rawT = String(a[tkey]).trim().replace(":", "");
+        if (/^\d{1,4}$/.test(rawT)) {
+          const n = parseInt(rawT, 10);
+          if (n > 2400) { // probabilmente minuti da mezzanotte
+            hh = Math.floor(n / 60) % 24; mm = n % 60;
+          } else { // HHMM
+            hh = Math.floor(n / 100) % 24; mm = n % 100;
           }
-          return new Date(Date.UTC(Y,(M||1)-1,D||1,hh,mm,0));
-        }catch(_){}
+        }
       }
+
+      // 1) epoch (numero) in sec/ms oppure stringa numerica 10/13 cifre
+      if (dkey != null) {
+        const v = a[dkey];
+        if (typeof v === "number") {
+          const ms = v > 1e12 ? v : v * 1000;
+          const d = new Date(ms);
+          if (!isNaN(d)) { d.setUTCHours(hh, mm, 0, 0); return d; }
+        } else if (typeof v === "string") {
+          const s = v.trim();
+          if (/^\d{10}$/.test(s) || /^\d{13}$/.test(s)) { // epoch string
+            const num = Number(s);
+            const ms = s.length === 13 ? num : num * 1000;
+            const d = new Date(ms);
+            if (!isNaN(d)) { d.setUTCHours(hh, mm, 0, 0); return d; }
+          }
+          // prova parse ISO
+          const p = Date.parse(s);
+          if (!isNaN(p)) {
+            const d = new Date(p);
+            if (tkey != null) d.setUTCHours(hh, mm, 0, 0);
+            return d;
+          }
+          // fallback "YYYY-MM-DD"
+          const m = s.match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+          if (m) {
+            const Y = +m[1], M = +m[2], D = +m[3];
+            const d = new Date(Date.UTC(Y, (M||1)-1, D||1, hh, mm, 0));
+            if (!isNaN(d)) return d;
+          }
+        }
+      }
+
+      // 2) qualunque altro campo con "datetime" o "date"
       const dtkey = pickKey(a, /(datetime|date)/i);
-      if(dtkey){
-        const raw=a[dtkey];
-        if(typeof raw==="string"){ const p=Date.parse(raw); if(!isNaN(p)) return new Date(p); }
-        if(typeof raw==="number"){ const ms = raw>1e12?raw:raw*1000; return new Date(ms); }
+      if (dtkey) {
+        const raw = a[dtkey];
+        if (typeof raw === "number") {
+          const ms = raw > 1e12 ? raw : raw * 1000;
+          const d = new Date(ms);
+          if (!isNaN(d)) return d;
+        } else if (typeof raw === "string") {
+          const s = raw.trim();
+          if (/^\d{10}$/.test(s) || /^\d{13}$/.test(s)) {
+            const num = Number(s);
+            const ms = s.length === 13 ? num : num * 1000;
+            const d = new Date(ms); if (!isNaN(d)) return d;
+          }
+          const p = Date.parse(s); if (!isNaN(p)) return new Date(p);
+        }
       }
       return null;
     }
+    function viirsPopupContent(a){
+      const dt = viirsDate(a);
+      const dtTxt = dt ? dt.toLocaleString() : "—";
+      const frp = a.frp!=null ? Number(a.frp).toFixed(1)+" MW" : "—";
+      const bright = a.brightness!=null ? Number(a.brightness).toFixed(0)+" K"
+                    : (a.brightness_ti4!=null ? Number(a.brightness_ti4).toFixed(0)+" K" : "—");
+      const dn = a.daynight || a.DayNight || "—";
+      const conf = a.confidence!=null ? a.confidence
+                  : (a.confidence_day!=null ? a.confidence_day
+                  : (a.confidence_night!=null ? a.confidence_night : "—"));
+      return `
+        <table class="info-table"><tbody>
+          <tr><th>Data/ora</th><td>${dtTxt}</td></tr>
+          <tr><th>FRP</th><td>${frp}</td></tr>
+          <tr><th>Brightness</th><td>${bright}</td></tr>
+          <tr><th>Day/Night</th><td>${dn}</td></tr>
+          <tr><th>Confidence</th><td>${conf}</td></tr>
+        </tbody></table>
+      `;
+    }
     function pickKey(obj, re){ for(const k in obj){ if(re.test(k)) return k; } return null; }
 
-    // Toggle fiamma (dentro la cornice)
+    // Toggle fiamma
     btnFireHeader.addEventListener("click", ()=>{
       const on = btnFireHeader.getAttribute("aria-pressed")==="true";
       if(on){ btnFireHeader.setAttribute("aria-pressed","false"); clearVIIRS(); showToast("Incêndios VIIRS: OFF"); }
@@ -449,9 +469,9 @@
     toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
     toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
 
-    // su schermi piccoli, parti compatti
     const small = Math.max(window.innerWidth, window.innerHeight) < 700;
     if(small){ togglePanel(infoPanel, toggleInfo); togglePanel(filterPanel, toggleFilter); }
+
   });
   </script>
 </body>
