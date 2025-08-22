@@ -9,7 +9,7 @@
   html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
   .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select { font-size:12px; line-height:1.2; }
 
-  /* Widget icone (GPS / Reset) */
+  /* Bottoni custom (stile ArcGIS) */
   .esri-btn-icon.esri-widget.esri-widget--button {
     display:flex; align-items:center; justify-content:center;
     font-size:20px; width:32px; height:32px; border-radius:8px;
@@ -17,7 +17,7 @@
   }
   .esri-btn-icon:active { transform: scale(.96); }
 
-  /* FIAMMA “nuda”: OFF=grigio, ON=colore naturale */
+  /* FIAMMA */
   #btnFireHeader {
     position:absolute; top:4px; right:6px; z-index:2;
     background:transparent; border:none; font-size:26px; line-height:1; padding:4px; cursor:pointer;
@@ -50,22 +50,17 @@
   .info-table th, .info-table td { text-align:left; padding:2px 4px; border-bottom:1px dotted #eee; vertical-align:top; word-break:break-word; }
   .info-table th { width:40%; color:#444; font-weight:600; }
 
-  /* Toast */
   #toast {
     position:absolute; top:62px; right:10px;
     background:#323232; color:#fff; padding:6px 10px; border-radius:6px;
     z-index:10; display:none; font-size:12px; box-shadow:0 3px 10px rgba(0,0,0,.2);
   }
 
-  /* Loader overlay */
   #loadingMessage { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:7; }
   #loadingBox { background:#fff; padding:10px 12px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
 
-  /* === Popup compatto stile “meteo” === */
   .esri-popup__main-container { max-width: 290px; border-radius: 10px; }
-  .esri-popup .esri-popup__header, .esri-popup .esri-popup__content, .esri-popup .esri-popup__footer {
-    padding: 6px 8px;
-  }
+  .esri-popup .esri-popup__header, .esri-popup__content, .esri-popup__footer { padding: 6px 8px; }
   .esri-popup .esri-popup__header-title { font-size: 13px; line-height: 1.2; }
   .esri-popup .esri-popup__content { font-size: 12px; }
   .esri-popup .esri-popup__footer { font-size: 12px; }
@@ -74,7 +69,6 @@
 <body>
   <div id="viewDiv"></div>
 
-  <!-- Pannello info + FIAMMA dentro la cornice -->
   <div id="infoPanel" aria-live="polite">
     <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
     <button id="btnFireHeader" title="Incêndios (VIIRS)" aria-pressed="false">🔥</button>
@@ -82,7 +76,6 @@
     <div id="infoContent"></div>
   </div>
 
-  <!-- Pannello filtro -->
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
     <strong class="panel-title">Filtrar</strong>
@@ -94,7 +87,6 @@
     </div>
   </div>
 
-  <!-- Toast + Loader -->
   <div id="toast"></div>
   <div id="loadingMessage"><div id="loadingBox">A carregar dados…</div></div>
 
@@ -110,30 +102,70 @@
   ], function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,Extent,
               SimpleMarkerSymbol,SimpleLineSymbol,Search,BasemapGallery,Expand,reactiveUtils){
 
-    /* ====== MAPPA & UI ====== */
     const map = new Map({ basemap: "streets-navigation-vector" });
-    const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7, popupEnabled:true });
+    const initialCenter = [-8, 39.5];
+    const initialZoom = 7;
+    const view = new MapView({ container:"viewDiv", map, center:initialCenter, zoom:initialZoom, popupEnabled:true });
 
-    // Popup più piccolo e flottante (niente docking forzato su mobile)
+    /* Popup */
     view.when(() => {
       view.popup.dockEnabled = false;
-      view.popup.dockOptions = { breakpoint: false }; // non forzare dock su mobile
+      view.popup.dockOptions = { breakpoint: false };
       view.popup.collapseEnabled = true;
       view.popup.spinnerEnabled = false;
       view.popup.alignment = "top-center";
-      view.popup.actions = []; // popup pulita
+      view.popup.actions = [];
     });
 
-    const search = new Search({ view });
-    view.ui.add(search, { position:"top-right", index:1 });
-
+    /* Basemap gallery (in basso a destra) */
     const basemapGallery = new BasemapGallery({ view });
     const bgExpand = new Expand({ view, content: basemapGallery, expandIconClass:"esri-icon-basemap" });
     view.ui.add(bgExpand, "bottom-right");
-    // AUTO-HIDE: chiudi quando cambia la basemap
     reactiveUtils.watch(() => basemapGallery.activeBasemap, () => { bgExpand.expanded = false; });
 
-    // GPS (più piccolo + shadow) e Reset extent sotto lo zoom
+    /* LAYERS */
+    const waterLayer = new GraphicsLayer(); map.add(waterLayer);
+    const filteredPointsLayer = new GraphicsLayer(); map.add(filteredPointsLayer);
+    const linesLayer = new GraphicsLayer(); map.add(linesLayer);
+    const locLayer = new GraphicsLayer(); map.add(locLayer);
+    const viirsLayer = new GraphicsLayer(); map.add(viirsLayer);
+
+    /* Simboli con halo/drop shadow */
+    const symWater    = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[255,255,255,0.9], width:1.5 }, size:6 });
+    const symFiltered = new SimpleMarkerSymbol({ color:[255,64,64,0.9],  outline:{ color:[255,255,255,0.9], width:1.5 }, size:7 });
+    const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9],   outline:{ color:[255,255,255,0.9], width:2.5 }, size:10 });
+    const symLine     = new SimpleLineSymbol({ color:[255,0,0,0.7], width:2 });
+    const symFire     = { type:"simple-marker", size:7, color:[255,64,0,0.9], outline:{ color:[255,255,255,0.9], width:1.5 } };
+
+    /* ====== UI: colonna sinistra (Zoom + Ricentra + Reset Nord + Ricerca icona) ====== */
+    // Ricentra: torna al centro iniziale mantenendo lo zoom attuale
+    const recenterBtn = document.createElement("button");
+    recenterBtn.className = "esri-btn-icon esri-widget esri-widget--button";
+    recenterBtn.title = "Ricen tra"; recenterBtn.textContent = "⦿";
+    recenterBtn.onclick = ()=> view.goTo({ center: initialCenter, zoom: view.zoom }).catch(()=>{});
+
+    // Reset Nord: rotazione = 0°
+    const resetNorthBtn = document.createElement("button");
+    resetNorthBtn.className = "esri-btn-icon esri-widget esri-widget--button";
+    resetNorthBtn.title = "Resetta Nord"; resetNorthBtn.textContent = "🧭";
+    resetNorthBtn.onclick = ()=> { view.rotation = 0; };
+
+    // Ricerca come icona (lente) in Expand
+    const searchWidget = new Search({ view, includeDefaultSources: true });
+    const searchExpand = new Expand({
+      view,
+      content: searchWidget,
+      expandIconClass: "esri-icon-search",
+      collapseIconClass: "esri-icon-search"
+    });
+
+    // Posizionamento in colonna sotto i controlli di zoom (lato sinistro)
+    // L'ordine: Zoom (+/-) [di default], poi Ricentra, poi Reset Nord, poi Lente (Expand)
+    view.ui.add(recenterBtn,   { position:"top-left", index:1 });
+    view.ui.add(resetNorthBtn, { position:"top-left", index:2 });
+    view.ui.add(searchExpand,  { position:"top-left", index:3 });
+
+    /* ====== UI: GPS rimane in alto a destra ====== */
     const gpsBtn = document.createElement("button");
     gpsBtn.className = "esri-btn-icon esri-widget esri-widget--button";
     gpsBtn.title = "Localizar-me"; gpsBtn.textContent = "📍";
@@ -151,20 +183,7 @@
     );
     view.ui.add(gpsBtn, { position:"top-right", index:0 });
 
-    const resetBtn = document.createElement("button");
-    resetBtn.className = "esri-btn-icon esri-widget esri-widget--button";
-    resetBtn.title = "Repor extensão inicial"; resetBtn.textContent = "⤾";
-    resetBtn.onclick = ()=> view.goTo({ center:[-8,39.5], zoom:7 });
-    view.ui.add(resetBtn, { position:"top-left", index:1 });
-
-    /* ====== LAYERS ====== */
-    const waterLayer = new GraphicsLayer(); map.add(waterLayer);
-    const filteredPointsLayer = new GraphicsLayer(); map.add(filteredPointsLayer);
-    const linesLayer = new GraphicsLayer(); map.add(linesLayer);
-    const locLayer = new GraphicsLayer(); map.add(locLayer);
-    const viirsLayer = new GraphicsLayer(); map.add(viirsLayer);
-
-    /* ====== RIF & STATO ====== */
+    /* ====== Pannelli, toast, loader ====== */
     const infoPanel = document.getElementById("infoPanel");
     const infoContent = document.getElementById("infoContent");
     const toggleInfo = document.getElementById("toggleInfo");
@@ -188,12 +207,6 @@
     const uniqueDistritos = new Set();
     let spatialGrid = {};
     let nearest = [];
-
-    const symWater = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[80,220,255], width:1 }, size:5 });
-    const symFiltered = new SimpleMarkerSymbol({ color:[255,64,64,0.9], outline:{ color:[255,230,120], width:1 }, size:6 });
-    const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9], outline:{ color:[255,255,255], width:2 }, size:10 });
-    const symLine = new SimpleLineSymbol({ color:[255,0,0,0.6], width:1.5, style:"short-dash" });
-    const symFire = { type:"simple-marker", size:6, color:[255,64,0,0.9], outline:null };
 
     /* ====== ICNF WFS ====== */
     const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
@@ -346,11 +359,24 @@
     view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
     view.when(()=>{ if(view.center) findNearest(view.center); });
 
-    /* ====== VIIRS (GeoJSON) ====== */
+    /* ====== VIIRS ultimi 2 giorni + bounding box Europa ====== */
     const VIIRS_QUERY_BASE =
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
     function viirsGeoJsonUrl(){
-      const qs = new URLSearchParams({ where:"1=1", outFields:"*", outSR:"4326", f:"geojson" }).toString();
+      const d = new Date(); d.setUTCDate(d.getUTCDate() - 2);
+      const yyyy = d.getUTCFullYear(), mm = String(d.getUTCMonth()+1).padStart(2,"0"), dd = String(d.getUTCDate()).padStart(2,"0");
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const bbox = { xmin:-12, ymin:34, xmax:32, ymax:72, spatialReference:{ wkid:4326 } };
+      const qs = new URLSearchParams({
+        where: `acq_date >= DATE '${dateStr}'`,
+        outFields: "*",
+        outSR: "4326",
+        f: "geojson",
+        geometry: JSON.stringify(bbox),
+        geometryType: "esriGeometryEnvelope",
+        spatialRel: "esriSpatialRelIntersects",
+        inSR: "4326"
+      }).toString();
       return `${VIIRS_QUERY_BASE}?${qs}`;
     }
 
@@ -358,10 +384,8 @@
       try{
         showLoader("A carregar incêndios…");
         const res = await fetch(viirsGeoJsonUrl(), { method:"GET", mode:"cors", credentials:"omit", cache:"no-store" });
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const gj = await res.json();
-        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON não válido");
-        drawVIIRS(gj.features);
+        drawVIIRS(gj.features||[]);
         showToast("Incêndios VIIRS: ON");
       } catch(err){
         console.error("VIIRS fetch error:", err);
@@ -385,21 +409,19 @@
     }
     function clearVIIRS(){ viirsLayer.removeAll(); }
 
-    // Parser data/ora robusto + formattazione compatta
+    // Parser data/ora + contenuto popup VIIRS
     function viirsDate(a){
       const dkey = pickKey(a, /^(acq[_]?date)$/i);
       const tkey = pickKey(a, /^(acq[_]?time)$/i);
       let hh = 0, mm = 0;
-
       if (tkey != null && a[tkey] != null) {
         const rawT = String(a[tkey]).trim().replace(":", "");
         if (/^\d{1,4}$/.test(rawT)) {
           const n = parseInt(rawT, 10);
-          if (n > 2400) { hh = Math.floor(n/60)%24; mm = n%60; } // minuti da mezzanotte
-          else { hh = Math.floor(n/100)%24; mm = n%100; }       // HHMM
+          if (n > 2400) { hh = Math.floor(n/60)%24; mm = n%60; }
+          else { hh = Math.floor(n/100)%24; mm = n%100; }
         }
       }
-
       if (dkey != null) {
         const v = a[dkey];
         if (typeof v === "number") {
@@ -416,7 +438,6 @@
           if (m) { const Y=+m[1], M=+m[2], D=+m[3]; const d = new Date(Date.UTC(Y,(M||1)-1,D||1,hh,mm,0)); if(!isNaN(d)) return d; }
         }
       }
-
       const dtkey = pickKey(a, /(datetime|date)/i);
       if (dtkey) {
         const raw = a[dtkey];
@@ -447,7 +468,7 @@
     }
     function pickKey(obj, re){ for(const k in obj){ if(re.test(k)) return k; } return null; }
 
-    // Toggle fiamma (dentro la cornice)
+    // Toggle fiamma
     btnFireHeader.addEventListener("click", ()=>{
       const on = btnFireHeader.getAttribute("aria-pressed")==="true";
       if(on){ btnFireHeader.setAttribute("aria-pressed","false"); clearVIIRS(); showToast("Incêndios VIIRS: OFF"); }
