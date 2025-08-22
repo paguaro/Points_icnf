@@ -1,294 +1,384 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-  <meta charset="UTF-8" />
-  <title>Pontos de água ICNF + VIIRS</title>
+  <meta charset="utf-8" />
+  <title>Pontos de água ICNF + VIIRS (versão estável)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
 
   <style>
     html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
 
-    /* ombra uniforme per tutti i widget (come il pallino GPS) */
-    .esri-ui .esri-widget, .esri-expand__content, .tool-chip {
-      box-shadow: 0 4px 10px rgba(0,0,0,.22);
-      border-radius: 10px;
+    /* Colonna comandi a sinistra, dimensione coerente */
+    .tool-col .esri-widget, .tool-col .btn, .tool-col .switch {
+      width: 44px; height: 44px; border-radius: 6px; display:flex; align-items:center; justify-content:center;
+      box-shadow: 0 1px 3px rgba(0,0,0,.25); background:#fff; margin-bottom:8px;
+      font-size: 18px;
+    }
+    .tool-col .btn { cursor:pointer; border:1px solid #e0e0e0; }
+    .tool-col .btn:active { transform: translateY(1px); }
+
+    /* Search compatta come icona */
+    .search-compact .esri-search__container,
+    .search-compact .esri-search__input-container,
+    .search-compact .esri-input { width: 0 !important; min-width: 0 !important; padding:0 !important; border:none !important; }
+    .search-compact .esri-widget--button { width:44px; height:44px; }
+
+    /* Pannello filtro richiudibile */
+    .panel {
+      position:absolute; left:16px; top:180px; z-index: 30;
+      background:#fff; border:1px solid #e0e0e0; border-radius:10px; overflow:hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      width: 310px; max-width: calc(100vw - 32px);
+    }
+    .panel-header {
+      display:flex; align-items:center; gap:10px; padding:10px 12px; background:#ffffff; cursor:pointer;
+      border-bottom:1px solid #eee;
+    }
+    .panel-header .icon-fire { color:#e11; text-shadow:0 0 3px rgba(255,255,255,.9); font-size: 20px; }
+    .panel-title { font-weight:600; }
+    .panel-body { padding:10px 12px; display:block; }
+    .panel.collapsed .panel-body { display:none; }
+    .panel-footer { padding:8px 12px; border-top:1px solid #eee; background:#fafafa; }
+    .results { max-height:160px; overflow:auto; border:1px dashed #ddd; padding:6px; border-radius:6px; background:#fff; }
+    .results.collapsed { display:none; }
+
+    /* Selettore "Selecionar todos" come chip */
+    .chip {
+      display:inline-flex; align-items:center; gap:10px; padding:10px 12px; border-radius:20px;
+      background:#fff; border:1px solid #e0e0e0; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+      position:absolute; left:16px; top:120px; z-index:35; user-select:none;
+      font-size:14px;
+    }
+    .chip input { width:18px; height:18px; }
+
+    /* Ombra tipo "drop shadow" per i layer puntuali */
+    .shadow-effect .esri-view .esri-display-object { filter: drop-shadow(0 0 2px rgba(255,255,255,0.85)) drop-shadow(0 0 2px rgba(0,0,0,0.35)); }
+
+    /* Badge crediti basso */
+    .credits {
+      position:absolute; bottom:6px; right:10px; z-index: 20; font-size:11px; color:#555; background:rgba(255,255,255,.7);
+      padding:3px 6px; border-radius:6px;
     }
 
-    /* colonna sinistra compatta e uniforme */
-    .left-col .esri-widget, .left-col .tool-chip, .left-col .esri-expand__container {
-      margin: 6px 0;
-    }
+    /* Evita che i widget invadano troppo su iPhone */
+    .esri-ui .esri-widget { font-size: 13px; }
 
-    /* icona fissa del filtro (fuoco) sempre visibile */
-    .filter-pin {
-      font-size: 20px; line-height: 20px;
-      width: 36px; height: 36px; border-radius: 10px;
-      display: grid; place-items: center; background: #fff;
-      cursor: pointer;
-    }
+    /* Colonna a sinistra per strumenti */
+    .tool-col { position:absolute; left:16px; top:16px; z-index:40; display:flex; flex-direction:column; }
 
-    /* finestra risultati (racchiudibile) */
-    .results {
-      min-width: 260px; max-width: 300px;
-      padding: 10px 12px;
-      font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial;
-    }
-    .results h3 { margin: 0 0 6px 0; font-size: 16px; }
-    .results small { color: #555; }
-
-    /* pallino rosso gps coerente (se servisse) */
-    .gps-dot {
-      width:12px; height:12px; border-radius:50%;
-      background:#e60026; outline: 3px solid white;
-      filter: drop-shadow(0 2px 6px rgba(0,0,0,.4));
-    }
-
-    /* renderer helper per icone nei titoli */
-    .title-ico { margin-right:6px; }
-
-    /* disabilita selezione testo accidentale su mobile */
-    * { -webkit-tap-highlight-color: transparent; user-select: none; }
   </style>
   <script src="https://js.arcgis.com/4.33/"></script>
 </head>
-<body>
+<body class="shadow-effect">
   <div id="viewDiv"></div>
 
-  <script>
+  <!-- Colonna strumenti -->
+  <div class="tool-col" aria-label="Ferramentas do mapa">
+    <div id="zoomDiv"></div>
+    <div id="homeDiv" class="btn" title="Centrar mapa"><i class="fa-solid fa-house"></i></div>
+    <div id="compassDiv"></div>
+    <!-- Search in versione compatta -->
+    <div id="searchDiv" class="search-compact"></div>
+  </div>
+
+  <!-- Selettore 'Selecionar todos' -->
+  <label class="chip" title="Mostrar/ocultar todas as camadas">
+    <input id="chkAll" type="checkbox" checked />
+    <span>Selecionar todos</span>
+  </label>
+
+  <!-- Pannello filtro richiudibile -->
+  <div id="filterPanel" class="panel collapsed" role="region" aria-label="Filtro">
+    <div class="panel-header" id="filterHeader">
+      <span class="icon-fire"><i class="fa-solid fa-fire"></i></span>
+      <span class="panel-title">Filtro & Resultados</span>
+      <span style="margin-left:auto"><i class="fa-solid fa-chevron-down" id="chev"></i></span>
+    </div>
+    <div class="panel-body">
+      <!-- Mantengo struttura semplice: non tocco la logica del filtro, solo UI -->
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <label>Campo:
+          <select id="fldSel">
+            <option value="confidence">confidence</option>
+            <option value="acq_date">acq_date</option>
+            <option value="bright_ti4">bright_ti4</option>
+          </select>
+        </label>
+        <label>Operador:
+          <select id="opSel">
+            <option value=">">&gt;</option>
+            <option value=">=">&ge;</option>
+            <option value="<">&lt;</option>
+            <option value="<=">&le;</option>
+            <option value="=">=</option>
+            <option value="contains">contém</option>
+          </select>
+        </label>
+        <label>Valor:
+          <input id="valInp" type="text" placeholder="Ex: 80 ou 2025-08-13" />
+        </label>
+        <button id="btnApply" class="btn" style="width:auto;height:auto;padding:8px 12px"><i class="fa-solid fa-filter"></i> Aplicar</button>
+        <button id="btnClear" class="btn" style="width:auto;height:auto;padding:8px 12px"><i class="fa-solid fa-broom"></i> Limpar</button>
+      </div>
+
+      <div style="margin-top:8px">
+        <button id="toggleResults" class="btn" style="width:auto;height:auto;padding:6px 10px"><i class="fa-regular fa-square-minus"></i> Recolher resultados</button>
+      </div>
+
+      <div id="results" class="results" aria-live="polite">
+        <em>Nenhum resultado ainda.</em>
+      </div>
+    </div>
+    <div class="panel-footer">
+      Dica: toque no ícone <i class="fa-solid fa-fire" style="color:#e11"></i> para recolher/expandir o filtro.
+    </div>
+  </div>
+
+  <div class="credits">Earthstar Geographics • Powered by Esri</div>
+
+<script>
+  /************** CONFIG: URLs dei servizi (GeoJSON via query) *****************/
+  // VIIRS (Hotspots) – GeoJSON
+  const VIIRS_URL =
+    "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
+
+  // ICNF – punti d’acqua (sostituisci con il tuo endpoint se diverso)
+  // Esempio generico (metti la tua URL REST -> /query?where=1=1&outFields=*&f=geojson)
+  const ICNF_URL =
+    "https://services.arcgis.com/9Q9m1G6Y0pHU9Ciy/arcgis/rest/services/ICNF_Pontos_Agua/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
+
+  /************** Helper: crea Blob URL da GeoJSON **************/
+  async function blobUrlFromGeoJSON(url){
+    const res = await fetch(url, { cache: "no-store" });
+    if(!res.ok) throw new Error("Falha ao descarregar GeoJSON: "+url);
+    const gj = await res.json();
+    const blob = new Blob([JSON.stringify(gj)], {type:"application/json"});
+    return URL.createObjectURL(blob);
+  }
+
+  /************** ArcGIS map **************/
   require([
     "esri/Map",
     "esri/views/MapView",
-    "esri/layers/FeatureLayer",
-    "esri/layers/GeoJSONLayer",
+    "esri/widgets/Zoom",
     "esri/widgets/Home",
     "esri/widgets/Compass",
     "esri/widgets/Search",
-    "esri/widgets/Locate",
-    "esri/widgets/Expand",
-    "esri/Graphic",
+    "esri/layers/GeoJSONLayer",
     "esri/geometry/Extent",
-    "esri/geometry/support/webMercatorUtils"
-  ], function(Map, MapView, FeatureLayer, GeoJSONLayer, Home, Compass, Search, Locate, Expand, Graphic, Extent, webMercatorUtils){
+    "esri/geometry/Polygon"
+  ], async (Map, MapView, Zoom, Home, Compass, Search, GeoJSONLayer, Extent, Polygon) => {
 
-    // ----- Mappa base
-    const map = new Map({
-      basemap: "satellite"
+    // Extent iniziale: Europa (centrato su PT)
+    const europeExtent = new Extent({
+      xmin: -21.0, ymin: 26.0, xmax: 45.0, ymax: 72.0,  // lon/lat (WGS84) convertiti automaticamente
+      spatialReference: { wkid: 4326 }
     });
 
-    // Bounding Europe only
-    const europeExtent = new Extent({
-      xmin: -30.0, ymin: 24.0, xmax: 45.0, ymax: 72.0, spatialReference: { wkid: 4326 }
+    const map = new Map({
+      basemap: "satellite"
     });
 
     const view = new MapView({
       container: "viewDiv",
       map,
-      center: [-8.3, 40.0],
-      zoom: 4,
+      extent: europeExtent, // start on Europe
       constraints: {
-        rotationEnabled: true,
-        geometry: europeExtent, // limite di navigazione
-        snapToZoom: false
+        geometry: Polygon.fromExtent(europeExtent), // limita il pan a Europa
+        minZoom: 3
       },
-      popup: { dockEnabled: true, dockOptions: { position: "top-right", buttonEnabled: true } }
+      popup: { dockEnabled: true, dockOptions: { position: "bottom-right", buttonEnabled: true } }
     });
 
-    // ---------- RENDERERS (ripristinati) ----------
-    // VIIRS: rosso pieno, bordo bianco, dimensione scala-dipendente (come prima)
-    const viirsRenderer = {
-      type: "simple",
-      symbol: {
-        type: "simple-marker",
-        style: "circle",
-        color: "#e60026",          // rosso vivo
-        size: 8,                   // base
-        outline: { color: "#ffffff", width: 1.5 }
-      },
-      visualVariables: [{
-        type: "size",
-        field: null,               // dipende dalla scala, non dal campo
-        stops: [
-          { value: 5e7, size: 4 }, // scala mondo
-          { value: 2.5e7, size: 6 },
-          { value: 1e7, size: 8 },
-          { value: 5e6, size: 10 },
-          { value: 1e6, size: 12 } // molto vicino
-        ],
-        valueUnit: "unknown"
-      }]
-    };
+    /************** Widgets nella colonna **************/
+    const zoom = new Zoom({ view });
+    view.ui.add(zoom, "manual");
+    document.getElementById("zoomDiv").appendChild(zoom.container);
 
-    // Punti d’acqua ICNF: blu pieno con bordo bianco (come prima) + scala-dipendente
-    const waterRenderer = {
-      type: "simple",
-      symbol: {
-        type: "simple-marker",
-        style: "circle",
-        color: "#1e90ff",          // blu
-        size: 10,
-        outline: { color: "#ffffff", width: 1.5 }
-      },
-      visualVariables: [{
-        type: "size",
-        stops: [
-          { value: 5e7, size: 5 },
-          { value: 1e7, size: 9 },
-          { value: 1e6, size: 13 }
-        ],
-        valueUnit: "unknown"
-      }]
-    };
+    const homeBtn = document.getElementById("homeDiv");
+    homeBtn.addEventListener("click", () => view.goTo({extent: europeExtent}));
 
-    // ---------- LAYER DATI ----------
-    // VIIRS Hotspots (servizio ufficiale – lasciamo la logica dati invariata)
-    const viirs = new FeatureLayer({
-      url: "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0",
-      title: "VIIRS Hotspots",
-      outFields: ["*"],
-      renderer: viirsRenderer,
-      popupEnabled: false,
-      effect: "drop-shadow(2px, 2px, 2px) brightness(1.05)"
-    });
-
-    // ICNF Points of Water (usa il tuo URL originale se diverso)
-    // Se già lo caricavi dal tuo FeatureServer, rimetti la stessa url:
-    const icnfWater = new FeatureLayer({
-      url: "https://services7.arcgis.com/g9S4U7Qv0k7wZVgU/arcgis/rest/services/icnf_pontos_agua/FeatureServer/0",
-      title: "Pontos de água",
-      outFields: ["*"],
-      renderer: waterRenderer,
-      popupTemplate: {
-        title: "{nome} {tipo}",
-        content: [{
-          type: "fields",
-          fieldInfos: [
-            { fieldName: "municipio", label: "Município" },
-            { fieldName: "freguesia", label: "Freguesia" },
-            { fieldName: "acesso", label: "Acesso" }
-          ]
-        },
-        {
-          type: "text",
-          text: `<a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination={latitude},{longitude}">Google Maps</a> &nbsp;|&nbsp;
-                 <a target="_blank" href="https://waze.com/ul?ll={latitude}%2C{longitude}&navigate=yes">Waze</a>`
-        }]
-      }
-    });
-
-    map.addMany([viirs, icnfWater]);
-
-    // ---------- WIDGETS (colonna sinistra uniforme) ----------
-    const home = new Home({ view });
     const compass = new Compass({ view });
-    const locate = new Locate({ view, useHeadingEnabled: false });
+    view.ui.add(compass, "manual");
+    document.getElementById("compassDiv").appendChild(compass.container);
 
-    // Seleziona tutti (chip semplice che fa highlight di tutti i punti d’acqua)
-    const selectAllBtn = document.createElement("div");
-    selectAllBtn.className = "tool-chip esri-widget";
-    selectAllBtn.style.padding = "8px 10px";
-    selectAllBtn.style.background = "#fff";
-    selectAllBtn.innerHTML = `<i class="fa-regular fa-square-check"></i>&nbsp;Selecionar todos`;
-    selectAllBtn.onclick = async () => {
-      const q = icnfWater.createQuery();
-      q.where = "1=1"; q.outFields = ["*"]; q.returnGeometry = true;
-      const res = await icnfWater.queryFeatures(q);
-      view.popup.open({
-        title: `Selecionados: ${res.features.length}`,
-        content: "Todos os pontos d’água foram selecionados.",
-        location: view.center
-      });
+    const search = new Search({
+      view, includeDefaultSources: true,
+      locationEnabled: true,
+      popupEnabled: false,
+      searchTerm: ""
+    });
+    view.ui.add(search, "manual");
+    document.getElementById("searchDiv").appendChild(search.container);
+
+    /************** Layer styles (simboli come “prima”) **************/
+
+    // Simbolo base: cerchio rosso con bordo bianco – scaling con lo zoom
+    const simpleRed = {
+      type: "simple", // renderer
+      symbol: {
+        type: "simple-marker",
+        style: "circle",
+        color: "#e60019",              // rosso vivo
+        outline: { color: "#ffffff", width: 2 }
+      },
+      visualVariables: [{
+        type: "size",
+        // usa la scala della view per dimensionare
+        stops: [
+          { value: 30_000_000, size: 6 },
+          { value: 9_000_000, size: 8 },
+          { value: 3_000_000, size: 10 },
+          { value: 1_000_000, size: 12 },
+          { value:   200_000, size: 14 }
+        ]
+      }]
     };
 
-    // Search sotto i pulsanti
-    const search = new Search({ view, includeDefaultSources: true, locationEnabled: true, popupEnabled: true });
+    // Popup con Waze/Google Maps
+    function buildNavHTML(graphic){
+      const { latitude, longitude } = graphic.geometry;
+      const lat = latitude.toFixed(6), lon = longitude.toFixed(6);
+      const gmaps = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+      const waze  = `https://waze.com/ul?ll=${lat}%2C${lon}&navigate=yes`;
+      return `
+        <div>
+          <div style="margin:.2rem 0 .6rem 0"><strong>Coordenadas:</strong> ${lat}, ${lon}</div>
+          <div style="display:flex; gap:.5rem; flex-wrap:wrap">
+            <a target="_blank" href="${gmaps}" class="esri-button">Google Maps</a>
+            <a target="_blank" href="${waze}" class="esri-button">Waze</a>
+          </div>
+        </div>`;
+    }
 
-    // Colonna sinistra
-    view.ui.add([ home, compass, locate, selectAllBtn, search ], "top-left");
-    view.ui.addClass("top-left", "left-col");
+    const viirsPopup = {
+      title: "VIIRS Hotspot",
+      content: (evt) => {
+        const g = evt.graphic;
+        const c = g.attributes;
+        const html = `
+          <div><strong>Data:</strong> ${c.acq_date ?? "-"} ${c.acq_time ? String(c.acq_time).padStart(4,"0") : ""}</div>
+          <div><strong>Confiança:</strong> ${c.confidence ?? "-"}</div>
+          <div><strong>Brightness:</strong> ${c.bright_ti4 ?? "-"}</div>
+          <hr/>
+          ${buildNavHTML(g)}
+        `;
+        const div = document.createElement("div"); div.innerHTML = html; return div;
+      }
+    };
 
-    // ---------- FILTRO (Expand con icona fuoco sempre visibile) ----------
-    // Icona fissa
-    const filterPin = document.createElement("div");
-    filterPin.className = "filter-pin esri-widget";
-    filterPin.title = "Filtrar (VIIRS)";
+    const icnfPopup = {
+      title: "{Nome || Nome_Ponto || 'Ponto de água'}",
+      content: (evt) => {
+        const g = evt.graphic;
+        const c = g.attributes;
+        const linhas = [];
+        Object.keys(c).slice(0, 12).forEach(k => linhas.push(`<div><strong>${k}:</strong> ${c[k]}</div>`));
+        const html = `${linhas.join("")}<hr/>${buildNavHTML(g)}`;
+        const div = document.createElement("div"); div.innerHTML = html; return div;
+      }
+    };
 
-    filterPin.innerHTML = "🔥";
+    /************** Crea i layer da Blob URLs (no CORS) **************/
+    try{
+      const [viirsBlobUrl, icnfBlobUrl] = await Promise.all([
+        blobUrlFromGeoJSON(VIIRS_URL),
+        blobUrlFromGeoJSON(ICNF_URL)
+      ]);
 
-    // Contenuto filtro + risultati (racchiudibile)
-    const filterPanel = document.createElement("div");
-    filterPanel.className = "results";
-    filterPanel.innerHTML = `
-      <h3><span class="title-ico">🔥</span>Pontos de água próximos</h3>
-      <div style="margin:8px 0 10px 0">
-        <label>Raio (km):&nbsp;
-          <input id="radiusKm" type="number" value="10" min="1" max="50" step="1" style="width:64px" />
-        </label>
-        <button id="btnRun" class="esri-button" style="margin-left:8px">Filtrar</button>
-      </div>
-      <div id="resultsList"><ul><li>Nenhum ponto encontrado (&le; 10 km)</li></ul></div>
-      <small>Janela recolhível; o ícone 🔥 permanece sempre visível.</small>
-    `;
+      const viirsLayer = new GeoJSONLayer({
+        url: viirsBlobUrl,
+        title: "VIIRS – Hotspots",
+        renderer: simpleRed,
+        popupTemplate: viirsPopup,
+        effect: "drop-shadow(1px, 1px, 1px)", // extra ombra via API
+        outFields: ["*"]
+      });
 
-    const expandFilter = new Expand({
-      view, expandIconClass: "esri-icon-firefly",
-      content: filterPanel, expanded: true
+      const icnfLayer = new GeoJSONLayer({
+        url: icnfBlobUrl,
+        title: "ICNF – Pontos de água",
+        renderer: simpleRed,
+        popupTemplate: icnfPopup,
+        effect: "drop-shadow(1px, 1px, 1px)",
+        outFields: ["*"]
+      });
+
+      map.addMany([viirsLayer, icnfLayer]);
+
+      // "Selecionar todos" – toggle visibilità gruppi
+      const chkAll = document.getElementById("chkAll");
+      chkAll.addEventListener("change", () => {
+        const vis = chkAll.checked;
+        viirsLayer.visible = vis;
+        icnfLayer.visible = vis;
+      });
+
+      /************** Filtro (solo UI; applichiamo client-side su VIIRS) **************/
+      const fldSel = document.getElementById("fldSel");
+      const opSel  = document.getElementById("opSel");
+      const valInp = document.getElementById("valInp");
+      const btnApply = document.getElementById("btnApply");
+      const btnClear = document.getElementById("btnClear");
+      const results = document.getElementById("results");
+
+      function applyFilter(){
+        const fld = fldSel.value, op = opSel.value, valRaw = valInp.value.trim();
+        if(!valRaw){ results.innerHTML = "<em>Indique um valor.</em>"; return; }
+        let where = "";
+
+        if(op === "contains"){
+          where = `${fld} LIKE '%${valRaw.replace(/'/g,"''")}%'`;
+        } else if (isNaN(Number(valRaw))) {
+          // tenta come data/stringa
+          where = `${fld} ${op} '${valRaw.replace(/'/g,"''")}'`;
+        } else {
+          where = `${fld} ${op} ${valRaw}`;
+        }
+
+        // Applichiamo un filtro client-side (FeatureEffect) su VIIRS
+        viirsLayer.featureEffect = {
+          filter: { where },
+          excludedEffect: "opacity(30%)"
+        };
+
+        // Mostriamo un conto approssimativo (client-side)
+        results.innerHTML = `<div>Filtro aplicado: <code>${where}</code></div><div>A carregar contagem…</div>`;
+        viirsLayer.queryFeatureCount({ where }).then(cnt => {
+          results.innerHTML = `<div>Filtro aplicado: <code>${where}</code></div><div><strong>Resultados:</strong> ${cnt}</div>`;
+        }).catch(()=>{ results.innerHTML += "<div>Não foi possível contar.</div>"; });
+      }
+
+      btnApply.addEventListener("click", applyFilter);
+
+      btnClear.addEventListener("click", () => {
+        viirsLayer.featureEffect = null;
+        results.innerHTML = "<em>Nenhum resultado ainda.</em>";
+        valInp.value = "";
+      });
+
+    } catch(e){
+      console.error(e);
+      alert("Erro ao carregar camadas (GeoJSON). Verifique os URLs.");
+    }
+
+    /************** UI: pannello filtro richiudibile **************/
+    const panel = document.getElementById("filterPanel");
+    const header = document.getElementById("filterHeader");
+    const chev = document.getElementById("chev");
+    header.addEventListener("click", () => {
+      const collapsed = panel.classList.toggle("collapsed");
+      chev.className = collapsed ? "fa-solid fa-chevron-down" : "fa-solid fa-chevron-up";
     });
 
-    // icona fissa e pannello a destra
-    view.ui.add(filterPin, "top-right");
-    view.ui.add(expandFilter, "top-right");
-
-    // click sull’icona apre/chiude l’Expand
-    filterPin.addEventListener("click", () => expandFilter.expanded = !expandFilter.expanded);
-
-    // logica filtro (invariata nella sostanza: cerca punti d’acqua entro raggio dal centro)
-    async function runFilter() {
-      const km = Number(document.getElementById("radiusKm").value) || 10;
-      const center = webMercatorUtils.webMercatorToGeographic(view.center);
-      const radiusMeters = km * 1000;
-
-      const q = icnfWater.createQuery();
-      q.geometry = view.center;
-      q.distance = km;
-      q.units = "kilometers";
-      q.outFields = ["*"]; q.returnGeometry = true;
-
-      const res = await icnfWater.queryFeatures(q);
-
-      const el = document.getElementById("resultsList");
-      if (!res.features.length) {
-        el.innerHTML = `<ul><li>Nenhum ponto encontrado (&le; ${km} km)</li></ul>`;
-        return;
-      }
-      const items = res.features.slice(0, 20).map(f => {
-        const g = webMercatorUtils.webMercatorToGeographic(f.geometry);
-        const d = haversine(center.y, center.x, g.y, g.x);
-        return { nome: f.attributes?.nome || "Ponto", d, g };
-      }).sort((a,b)=>a.d-b.d);
-
-      el.innerHTML = `<ul>` + items.map(i =>
-        `<li>${i.nome} — ${i.d.toFixed(1)} km</li>`).join("") + `</ul>`;
-    }
-
-    // helper distanza
-    function haversine(lat1, lon1, lat2, lon2){
-      const R=6371, toRad=a=>a*Math.PI/180;
-      const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
-      const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-      return 2*R*Math.asin(Math.sqrt(a));
-    }
-
-    document.getElementById("btnRun").addEventListener("click", runFilter);
-
-    // ---------- Qualche rifinitura ----------
-    // posizioni coerenti
-    view.when(() => {
-      // niente
+    document.getElementById("toggleResults").addEventListener("click", () => {
+      const res = document.getElementById("results");
+      res.classList.toggle("collapsed");
     });
 
   });
-  </script>
+</script>
 </body>
 </html>
