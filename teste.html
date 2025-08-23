@@ -1,384 +1,493 @@
 <!DOCTYPE html>
 <html lang="pt">
 <head>
-  <meta charset="utf-8" />
-  <title>Pontos de água ICNF + VIIRS (versão estável)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<meta charset="utf-8" />
+<title>Pontos de água ICNF + VIIRS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
+<style>
+  html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
+  .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select { font-size:12px; line-height:1.2; }
 
-  <style>
-    html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
+  /* Bottoni custom (stile ArcGIS) */
+  .esri-btn-icon.esri-widget.esri-widget--button {
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px; width:32px; height:32px; border-radius:8px;
+    box-shadow:0 2px 6px rgba(0,0,0,.25); background:#fff;
+  }
+  .esri-btn-icon:active { transform: scale(.96); }
 
-    /* Colonna comandi a sinistra, dimensione coerente */
-    .tool-col .esri-widget, .tool-col .btn, .tool-col .switch {
-      width: 44px; height: 44px; border-radius: 6px; display:flex; align-items:center; justify-content:center;
-      box-shadow: 0 1px 3px rgba(0,0,0,.25); background:#fff; margin-bottom:8px;
-      font-size: 18px;
-    }
-    .tool-col .btn { cursor:pointer; border:1px solid #e0e0e0; }
-    .tool-col .btn:active { transform: translateY(1px); }
+  /* FIAMMA */
+  #btnFireHeader {
+    position:absolute; top:4px; right:6px; z-index:2;
+    background:transparent; border:none; font-size:26px; line-height:1; padding:4px; cursor:pointer;
+    filter: grayscale(1) brightness(.8); transition: filter .15s ease, transform .08s ease;
+  }
+  #btnFireHeader[aria-pressed="true"] { filter:none; }
+  #btnFireHeader:active { transform: scale(.96); }
 
-    /* Search compatta come icona */
-    .search-compact .esri-search__container,
-    .search-compact .esri-search__input-container,
-    .search-compact .esri-input { width: 0 !important; min-width: 0 !important; padding:0 !important; border:none !important; }
-    .search-compact .esri-widget--button { width:44px; height:44px; }
+  /* Pannelli */
+  #infoPanel, #filterPanel {
+    position:absolute; background:#fff; padding:8px 10px; border-radius:10px;
+    box-shadow:0 2px 10px rgba(0,0,0,.15); font-size:9px; z-index:5; max-height:50%;
+    overflow-y:auto;
+  }
+  #infoPanel { top:110px; right:10px; width:min(260px,42vw); }
+  #filterPanel { top:130px; left:10px; width:min(180px,32vw); }
 
-    /* Pannello filtro richiudibile */
-    .panel {
-      position:absolute; left:16px; top:180px; z-index: 30;
-      background:#fff; border:1px solid #e0e0e0; border-radius:10px; overflow:hidden;
-      box-shadow: 0 2px 8px rgba(0,0,0,.25);
-      width: 310px; max-width: calc(100vw - 32px);
-    }
-    .panel-header {
-      display:flex; align-items:center; gap:10px; padding:10px 12px; background:#ffffff; cursor:pointer;
-      border-bottom:1px solid #eee;
-    }
-    .panel-header .icon-fire { color:#e11; text-shadow:0 0 3px rgba(255,255,255,.9); font-size: 20px; }
-    .panel-title { font-weight:600; }
-    .panel-body { padding:10px 12px; display:block; }
-    .panel.collapsed .panel-body { display:none; }
-    .panel-footer { padding:8px 12px; border-top:1px solid #eee; background:#fafafa; }
-    .results { max-height:160px; overflow:auto; border:1px dashed #ddd; padding:6px; border-radius:6px; background:#fff; }
-    .results.collapsed { display:none; }
+  .toggle-chip {
+    position:absolute; top:4px; left:6px; background:#f2f2f2; border:1px solid #ddd;
+    cursor:pointer; border-radius:8px; padding:2px 6px; font-size:14px; line-height:1.1; user-select:none;
+  }
+  .panel-title { margin:0 32px 6px 32px; font-size:11px; font-weight:700; text-align:center; color:#0b4f71; }
 
-    /* Selettore "Selecionar todos" come chip */
-    .chip {
-      display:inline-flex; align-items:center; gap:10px; padding:10px 12px; border-radius:20px;
-      background:#fff; border:1px solid #e0e0e0; box-shadow: 0 1px 3px rgba(0,0,0,.2);
-      position:absolute; left:16px; top:120px; z-index:35; user-select:none;
-      font-size:14px;
-    }
-    .chip input { width:18px; height:18px; }
+  select, .btn { width:100%; padding:8px 10px; margin:4px 0; box-sizing:border-box; font-size:12px; border-radius:8px; }
+  .btn { background-color:#0079c1; color:#fff; border:none; cursor:pointer; }
+  .btn:hover { background-color:#005a8c; }
+  .btn-ghost { background:#fff; color:#000; border:1px solid #ccc; }
 
-    /* Ombra tipo "drop shadow" per i layer puntuali */
-    .shadow-effect .esri-view .esri-display-object { filter: drop-shadow(0 0 2px rgba(255,255,255,0.85)) drop-shadow(0 0 2px rgba(0,0,0,0.35)); }
+  .info-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .info-table th, .info-table td { text-align:left; padding:2px 4px; border-bottom:1px dotted #eee; vertical-align:top; word-break:break-word; }
+  .info-table th { width:40%; color:#444; font-weight:600; }
 
-    /* Badge crediti basso */
-    .credits {
-      position:absolute; bottom:6px; right:10px; z-index: 20; font-size:11px; color:#555; background:rgba(255,255,255,.7);
-      padding:3px 6px; border-radius:6px;
-    }
-
-    /* Evita che i widget invadano troppo su iPhone */
-    .esri-ui .esri-widget { font-size: 13px; }
-
-    /* Colonna a sinistra per strumenti */
-    .tool-col { position:absolute; left:16px; top:16px; z-index:40; display:flex; flex-direction:column; }
-
-  </style>
-  <script src="https://js.arcgis.com/4.33/"></script>
-</head>
-<body class="shadow-effect">
-  <div id="viewDiv"></div>
-
-  <!-- Colonna strumenti -->
-  <div class="tool-col" aria-label="Ferramentas do mapa">
-    <div id="zoomDiv"></div>
-    <div id="homeDiv" class="btn" title="Centrar mapa"><i class="fa-solid fa-house"></i></div>
-    <div id="compassDiv"></div>
-    <!-- Search in versione compatta -->
-    <div id="searchDiv" class="search-compact"></div>
-  </div>
-
-  <!-- Selettore 'Selecionar todos' -->
-  <label class="chip" title="Mostrar/ocultar todas as camadas">
-    <input id="chkAll" type="checkbox" checked />
-    <span>Selecionar todos</span>
-  </label>
-
-  <!-- Pannello filtro richiudibile -->
-  <div id="filterPanel" class="panel collapsed" role="region" aria-label="Filtro">
-    <div class="panel-header" id="filterHeader">
-      <span class="icon-fire"><i class="fa-solid fa-fire"></i></span>
-      <span class="panel-title">Filtro & Resultados</span>
-      <span style="margin-left:auto"><i class="fa-solid fa-chevron-down" id="chev"></i></span>
-    </div>
-    <div class="panel-body">
-      <!-- Mantengo struttura semplice: non tocco la logica del filtro, solo UI -->
-      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
-        <label>Campo:
-          <select id="fldSel">
-            <option value="confidence">confidence</option>
-            <option value="acq_date">acq_date</option>
-            <option value="bright_ti4">bright_ti4</option>
-          </select>
-        </label>
-        <label>Operador:
-          <select id="opSel">
-            <option value=">">&gt;</option>
-            <option value=">=">&ge;</option>
-            <option value="<">&lt;</option>
-            <option value="<=">&le;</option>
-            <option value="=">=</option>
-            <option value="contains">contém</option>
-          </select>
-        </label>
-        <label>Valor:
-          <input id="valInp" type="text" placeholder="Ex: 80 ou 2025-08-13" />
-        </label>
-        <button id="btnApply" class="btn" style="width:auto;height:auto;padding:8px 12px"><i class="fa-solid fa-filter"></i> Aplicar</button>
-        <button id="btnClear" class="btn" style="width:auto;height:auto;padding:8px 12px"><i class="fa-solid fa-broom"></i> Limpar</button>
-      </div>
-
-      <div style="margin-top:8px">
-        <button id="toggleResults" class="btn" style="width:auto;height:auto;padding:6px 10px"><i class="fa-regular fa-square-minus"></i> Recolher resultados</button>
-      </div>
-
-      <div id="results" class="results" aria-live="polite">
-        <em>Nenhum resultado ainda.</em>
-      </div>
-    </div>
-    <div class="panel-footer">
-      Dica: toque no ícone <i class="fa-solid fa-fire" style="color:#e11"></i> para recolher/expandir o filtro.
-    </div>
-  </div>
-
-  <div class="credits">Earthstar Geographics • Powered by Esri</div>
-
-<script>
-  /************** CONFIG: URLs dei servizi (GeoJSON via query) *****************/
-  // VIIRS (Hotspots) – GeoJSON
-  const VIIRS_URL =
-    "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
-
-  // ICNF – punti d’acqua (sostituisci con il tuo endpoint se diverso)
-  // Esempio generico (metti la tua URL REST -> /query?where=1=1&outFields=*&f=geojson)
-  const ICNF_URL =
-    "https://services.arcgis.com/9Q9m1G6Y0pHU9Ciy/arcgis/rest/services/ICNF_Pontos_Agua/FeatureServer/0/query?where=1%3D1&outFields=*&f=geojson";
-
-  /************** Helper: crea Blob URL da GeoJSON **************/
-  async function blobUrlFromGeoJSON(url){
-    const res = await fetch(url, { cache: "no-store" });
-    if(!res.ok) throw new Error("Falha ao descarregar GeoJSON: "+url);
-    const gj = await res.json();
-    const blob = new Blob([JSON.stringify(gj)], {type:"application/json"});
-    return URL.createObjectURL(blob);
+  #toast {
+    position:absolute; top:62px; right:10px;
+    background:#323232; color:#fff; padding:6px 10px; border-radius:6px;
+    z-index:10; display:none; font-size:12px; box-shadow:0 3px 10px rgba(0,0,0,.2);
   }
 
-  /************** ArcGIS map **************/
+  #loadingMessage { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:7; }
+  #loadingBox { background:#fff; padding:10px 12px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
+
+  .esri-popup__main-container { max-width: 290px; border-radius: 10px; }
+  .esri-popup .esri-popup__header, .esri-popup__content, .esri-popup__footer { padding: 6px 8px; }
+  .esri-popup .esri-popup__header-title { font-size: 13px; line-height: 1.2; }
+  .esri-popup .esri-popup__content { font-size: 12px; }
+  .esri-popup .esri-popup__footer { font-size: 12px; }
+</style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+
+  <div id="infoPanel" aria-live="polite">
+    <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
+    <button id="btnFireHeader" title="Incêndios (VIIRS)" aria-pressed="false">🔥</button>
+    <h4 class="panel-title">Pontos de água próximos</h4>
+    <div id="infoContent"></div>
+  </div>
+
+  <div id="filterPanel">
+    <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
+    <strong class="panel-title">Filtrar</strong>
+    <select id="distritoFilter" aria-label="Filtrar por distrito"><option value="">Todos os distritos</option></select>
+    <select id="concelhoFilter" aria-label="Filtrar por concelho"><option value="">Todos os concelhos</option></select>
+    <div style="display:flex; gap:6px; margin-top:4px;">
+      <button id="applyFilter" class="btn" style="flex:1;">Aplicar</button>
+      <button id="resetFilter" class="btn-ghost" style="flex:1;">Repor</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+  <div id="loadingMessage"><div id="loadingBox">A carregar dados…</div></div>
+
+  <script src="https://js.arcgis.com/4.33/"></script>
+  <script>
   require([
-    "esri/Map",
-    "esri/views/MapView",
-    "esri/widgets/Zoom",
-    "esri/widgets/Home",
-    "esri/widgets/Compass",
-    "esri/widgets/Search",
-    "esri/layers/GeoJSONLayer",
-    "esri/geometry/Extent",
-    "esri/geometry/Polygon"
-  ], async (Map, MapView, Zoom, Home, Compass, Search, GeoJSONLayer, Extent, Polygon) => {
+    "esri/Map","esri/views/MapView",
+    "esri/layers/GraphicsLayer","esri/Graphic",
+    "esri/geometry/Point","esri/geometry/Polyline","esri/geometry/Extent",
+    "esri/symbols/SimpleMarkerSymbol","esri/symbols/SimpleLineSymbol",
+    "esri/widgets/Search","esri/widgets/BasemapGallery","esri/widgets/Expand",
+    "esri/core/reactiveUtils"
+  ], function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,Extent,
+              SimpleMarkerSymbol,SimpleLineSymbol,Search,BasemapGallery,Expand,reactiveUtils){
 
-    // Extent iniziale: Europa (centrato su PT)
-    const europeExtent = new Extent({
-      xmin: -21.0, ymin: 26.0, xmax: 45.0, ymax: 72.0,  // lon/lat (WGS84) convertiti automaticamente
-      spatialReference: { wkid: 4326 }
+    const map = new Map({ basemap: "streets-navigation-vector" });
+    const initialCenter = [-8, 39.5];
+    const initialZoom = 7;
+    const view = new MapView({ container:"viewDiv", map, center:initialCenter, zoom:initialZoom, popupEnabled:true });
+
+    /* Popup */
+    view.when(() => {
+      view.popup.dockEnabled = false;
+      view.popup.dockOptions = { breakpoint: false };
+      view.popup.collapseEnabled = true;
+      view.popup.spinnerEnabled = false;
+      view.popup.alignment = "top-center";
+      view.popup.actions = [];
     });
 
-    const map = new Map({
-      basemap: "satellite"
+    /* Basemap gallery (in basso a destra) */
+    const basemapGallery = new BasemapGallery({ view });
+    const bgExpand = new Expand({ view, content: basemapGallery, expandIconClass:"esri-icon-basemap" });
+    view.ui.add(bgExpand, "bottom-right");
+    reactiveUtils.watch(() => basemapGallery.activeBasemap, () => { bgExpand.expanded = false; });
+
+    /* LAYERS */
+    const waterLayer = new GraphicsLayer(); map.add(waterLayer);
+    const filteredPointsLayer = new GraphicsLayer(); map.add(filteredPointsLayer);
+    const linesLayer = new GraphicsLayer(); map.add(linesLayer);
+    const locLayer = new GraphicsLayer(); map.add(locLayer);
+    const viirsLayer = new GraphicsLayer(); map.add(viirsLayer);
+
+    /* Simboli con halo/drop shadow */
+    const symWater    = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[255,255,255,0.9], width:1.5 }, size:6 });
+    const symFiltered = new SimpleMarkerSymbol({ color:[255,64,64,0.9],  outline:{ color:[255,255,255,0.9], width:1.5 }, size:7 });
+    const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9],   outline:{ color:[255,255,255,0.9], width:2.5 }, size:10 });
+    const symLine     = new SimpleLineSymbol({ color:[255,0,0,0.7], width:2 });
+    const symFire     = { type:"simple-marker", size:7, color:[255,64,0,0.9], outline:{ color:[255,255,255,0.9], width:1.5 } };
+
+    /* ====== UI: colonna sinistra (Zoom + Ricentra + Reset Nord + Ricerca icona) ====== */
+    // Ricentra: torna al centro iniziale mantenendo lo zoom attuale
+    const recenterBtn = document.createElement("button");
+    recenterBtn.className = "esri-btn-icon esri-widget esri-widget--button";
+    recenterBtn.title = "Ricen tra"; recenterBtn.textContent = "⦿";
+    recenterBtn.onclick = ()=> view.goTo({ center: initialCenter, zoom: view.zoom }).catch(()=>{});
+
+    // Reset Nord: rotazione = 0°
+    const resetNorthBtn = document.createElement("button");
+    resetNorthBtn.className = "esri-btn-icon esri-widget esri-widget--button";
+    resetNorthBtn.title = "Resetta Nord"; resetNorthBtn.textContent = "🧭";
+    resetNorthBtn.onclick = ()=> { view.rotation = 0; };
+
+    // Ricerca come icona (lente) in Expand
+    const searchWidget = new Search({ view, includeDefaultSources: true });
+    const searchExpand = new Expand({
+      view,
+      content: searchWidget,
+      expandIconClass: "esri-icon-search",
+      collapseIconClass: "esri-icon-search"
     });
 
-    const view = new MapView({
-      container: "viewDiv",
-      map,
-      extent: europeExtent, // start on Europe
-      constraints: {
-        geometry: Polygon.fromExtent(europeExtent), // limita il pan a Europa
-        minZoom: 3
+    // Posizionamento in colonna sotto i controlli di zoom (lato sinistro)
+    // L'ordine: Zoom (+/-) [di default], poi Ricentra, poi Reset Nord, poi Lente (Expand)
+    view.ui.add(recenterBtn,   { position:"top-left", index:1 });
+    view.ui.add(resetNorthBtn, { position:"top-left", index:2 });
+    view.ui.add(searchExpand,  { position:"top-left", index:3 });
+
+    /* ====== UI: GPS rimane in alto a destra ====== */
+    const gpsBtn = document.createElement("button");
+    gpsBtn.className = "esri-btn-icon esri-widget esri-widget--button";
+    gpsBtn.title = "Localizar-me"; gpsBtn.textContent = "📍";
+    gpsBtn.onclick = ()=> navigator.geolocation?.getCurrentPosition(
+      p=>{
+        const pt = new Point({ longitude:p.coords.longitude, latitude:p.coords.latitude });
+        view.goTo({ target:pt, zoom:14 }).catch(()=>{});
+        locLayer.removeAll();
+        locLayer.add(new Graphic({ geometry:pt, symbol:symLocation }));
+        showToast("Localização definida");
+        findNearest(pt);
       },
-      popup: { dockEnabled: true, dockOptions: { position: "bottom-right", buttonEnabled: true } }
-    });
+      ()=> showToast("Não foi possível obter a localização."),
+      { enableHighAccuracy:true, maximumAge:30000, timeout:10000 }
+    );
+    view.ui.add(gpsBtn, { position:"top-right", index:0 });
 
-    /************** Widgets nella colonna **************/
-    const zoom = new Zoom({ view });
-    view.ui.add(zoom, "manual");
-    document.getElementById("zoomDiv").appendChild(zoom.container);
+    /* ====== Pannelli, toast, loader ====== */
+    const infoPanel = document.getElementById("infoPanel");
+    const infoContent = document.getElementById("infoContent");
+    const toggleInfo = document.getElementById("toggleInfo");
+    const filterPanel = document.getElementById("filterPanel");
+    const toggleFilter = document.getElementById("toggleFilter");
+    const distritoFilter = document.getElementById("distritoFilter");
+    const concelhoFilter = document.getElementById("concelhoFilter");
+    const applyFilter = document.getElementById("applyFilter");
+    const resetFilter = document.getElementById("resetFilter");
+    const btnFireHeader = document.getElementById("btnFireHeader");
+    const toast = document.getElementById("toast");
+    const loadingMsg = document.getElementById("loadingMessage");
 
-    const homeBtn = document.getElementById("homeDiv");
-    homeBtn.addEventListener("click", () => view.goTo({extent: europeExtent}));
+    let loaderCount = 0;
+    function showLoader(txt){ if(txt) document.getElementById("loadingBox").textContent = txt; loaderCount++; loadingMsg.style.display="grid"; }
+    function hideLoader(force=false){ loaderCount = force ? 0 : Math.max(0, loaderCount-1); if(loaderCount===0) loadingMsg.style.display="none"; }
+    function showToast(msg, ms=1800){ toast.textContent = msg; toast.style.display = "block"; clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display = "none", ms); }
 
-    const compass = new Compass({ view });
-    view.ui.add(compass, "manual");
-    document.getElementById("compassDiv").appendChild(compass.container);
+    const allPoints = [];
+    const distritoConcelho = {};
+    const uniqueDistritos = new Set();
+    let spatialGrid = {};
+    let nearest = [];
 
-    const search = new Search({
-      view, includeDefaultSources: true,
-      locationEnabled: true,
-      popupEnabled: false,
-      searchTerm: ""
-    });
-    view.ui.add(search, "manual");
-    document.getElementById("searchDiv").appendChild(search.container);
+    /* ====== ICNF WFS ====== */
+    const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
+    showLoader("A carregar dados…");
+    fetch(wfsUrl, { credentials:"omit", cache:"no-store" })
+      .then(r=>r.json())
+      .then(gj=>{ if(!gj?.features) throw new Error("GeoJSON vazio."); ingestWater(gj.features); })
+      .catch(e=> { console.warn(e); showToast("Falha ao carregar pontos de água."); })
+      .finally(()=> hideLoader(true));
 
-    /************** Layer styles (simboli come “prima”) **************/
+    function ingestWater(features){
+      for(const f of features){
+        const c = f.geometry && f.geometry.coordinates;
+        if(!c) continue;
+        const pt = new Point({ longitude:+c[0], latitude:+c[1] });
+        const attrs = f.properties || {};
+        const g = new Graphic({
+          geometry:pt, attributes:attrs, symbol:symWater,
+          popupTemplate:{
+            title: attrs.nome || attrs.tipologia || "Ponto de água",
+            content:(ev)=>{
+              const geom=ev.graphic.geometry, a=ev.graphic.attributes||{};
+              const lat = Number(geom.latitude).toFixed(6), lon = Number(geom.longitude).toFixed(6);
+              const wazeUrl  = "https://waze.com/ul?ll="+lat+"%2C"+lon+"&navigate=yes&zoom=17";
+              const gmapsUrl = "https://www.google.com/maps/dir/?api=1&destination="+lat+","+lon;
+              return buildTable(a) +
+                     "<div style='margin-top:8px; display:flex; gap:10px; align-items:center;'>"+
+                     "<a href='"+wazeUrl+"' target='_blank' rel='noopener noreferrer'>Waze</a>"+
+                     "<a href='"+gmapsUrl+"' target='_blank' rel='noopener noreferrer'>Google</a>"+
+                     "</div>";
+            }
+          }
+        });
+        allPoints.push(g); waterLayer.add(g);
 
-    // Simbolo base: cerchio rosso con bordo bianco – scaling con lo zoom
-    const simpleRed = {
-      type: "simple", // renderer
-      symbol: {
-        type: "simple-marker",
-        style: "circle",
-        color: "#e60019",              // rosso vivo
-        outline: { color: "#ffffff", width: 2 }
-      },
-      visualVariables: [{
-        type: "size",
-        // usa la scala della view per dimensionare
-        stops: [
-          { value: 30_000_000, size: 6 },
-          { value: 9_000_000, size: 8 },
-          { value: 3_000_000, size: 10 },
-          { value: 1_000_000, size: 12 },
-          { value:   200_000, size: 14 }
-        ]
-      }]
-    };
-
-    // Popup con Waze/Google Maps
-    function buildNavHTML(graphic){
-      const { latitude, longitude } = graphic.geometry;
-      const lat = latitude.toFixed(6), lon = longitude.toFixed(6);
-      const gmaps = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
-      const waze  = `https://waze.com/ul?ll=${lat}%2C${lon}&navigate=yes`;
-      return `
-        <div>
-          <div style="margin:.2rem 0 .6rem 0"><strong>Coordenadas:</strong> ${lat}, ${lon}</div>
-          <div style="display:flex; gap:.5rem; flex-wrap:wrap">
-            <a target="_blank" href="${gmaps}" class="esri-button">Google Maps</a>
-            <a target="_blank" href="${waze}" class="esri-button">Waze</a>
-          </div>
-        </div>`;
+        const d = attrs.distrito || "Desconhecido";
+        const ccl = attrs.concelho || "Desconhecido";
+        uniqueDistritos.add(d);
+        if(!distritoConcelho[d]) distritoConcelho[d] = new Set();
+        distritoConcelho[d].add(ccl);
+      }
+      for(const d of Array.from(uniqueDistritos).sort()){ distritoFilter.appendChild(new Option(d,d)); }
+      if(view.center) findNearest(view.center);
     }
 
-    const viirsPopup = {
-      title: "VIIRS Hotspot",
-      content: (evt) => {
-        const g = evt.graphic;
-        const c = g.attributes;
-        const html = `
-          <div><strong>Data:</strong> ${c.acq_date ?? "-"} ${c.acq_time ? String(c.acq_time).padStart(4,"0") : ""}</div>
-          <div><strong>Confiança:</strong> ${c.confidence ?? "-"}</div>
-          <div><strong>Brightness:</strong> ${c.bright_ti4 ?? "-"}</div>
-          <hr/>
-          ${buildNavHTML(g)}
-        `;
-        const div = document.createElement("div"); div.innerHTML = html; return div;
+    function buildTable(attrs){
+      const rows = Object.entries(attrs||{}).filter(([k,v])=> v!=null && v!=="").sort((a,b)=> a[0].localeCompare(b[0]));
+      let html="<table class='info-table'><tbody>";
+      for(const [k,v] of rows){
+        const label=k.replace(/_/g," ").replace(/\b\w/g, l=>l.toUpperCase());
+        html += "<tr><th>"+label+"</th><td>"+v+"</td></tr>";
       }
-    };
+      html += "</tbody></table>";
+      return html;
+    }
 
-    const icnfPopup = {
-      title: "{Nome || Nome_Ponto || 'Ponto de água'}",
-      content: (evt) => {
-        const g = evt.graphic;
-        const c = g.attributes;
-        const linhas = [];
-        Object.keys(c).slice(0, 12).forEach(k => linhas.push(`<div><strong>${k}:</strong> ${c[k]}</div>`));
-        const html = `${linhas.join("")}<hr/>${buildNavHTML(g)}`;
-        const div = document.createElement("div"); div.innerHTML = html; return div;
-      }
-    };
-
-    /************** Crea i layer da Blob URLs (no CORS) **************/
-    try{
-      const [viirsBlobUrl, icnfBlobUrl] = await Promise.all([
-        blobUrlFromGeoJSON(VIIRS_URL),
-        blobUrlFromGeoJSON(ICNF_URL)
-      ]);
-
-      const viirsLayer = new GeoJSONLayer({
-        url: viirsBlobUrl,
-        title: "VIIRS – Hotspots",
-        renderer: simpleRed,
-        popupTemplate: viirsPopup,
-        effect: "drop-shadow(1px, 1px, 1px)", // extra ombra via API
-        outFields: ["*"]
-      });
-
-      const icnfLayer = new GeoJSONLayer({
-        url: icnfBlobUrl,
-        title: "ICNF – Pontos de água",
-        renderer: simpleRed,
-        popupTemplate: icnfPopup,
-        effect: "drop-shadow(1px, 1px, 1px)",
-        outFields: ["*"]
-      });
-
-      map.addMany([viirsLayer, icnfLayer]);
-
-      // "Selecionar todos" – toggle visibilità gruppi
-      const chkAll = document.getElementById("chkAll");
-      chkAll.addEventListener("change", () => {
-        const vis = chkAll.checked;
-        viirsLayer.visible = vis;
-        icnfLayer.visible = vis;
-      });
-
-      /************** Filtro (solo UI; applichiamo client-side su VIIRS) **************/
-      const fldSel = document.getElementById("fldSel");
-      const opSel  = document.getElementById("opSel");
-      const valInp = document.getElementById("valInp");
-      const btnApply = document.getElementById("btnApply");
-      const btnClear = document.getElementById("btnClear");
-      const results = document.getElementById("results");
-
-      function applyFilter(){
-        const fld = fldSel.value, op = opSel.value, valRaw = valInp.value.trim();
-        if(!valRaw){ results.innerHTML = "<em>Indique um valor.</em>"; return; }
-        let where = "";
-
-        if(op === "contains"){
-          where = `${fld} LIKE '%${valRaw.replace(/'/g,"''")}%'`;
-        } else if (isNaN(Number(valRaw))) {
-          // tenta come data/stringa
-          where = `${fld} ${op} '${valRaw.replace(/'/g,"''")}'`;
-        } else {
-          where = `${fld} ${op} ${valRaw}`;
+    /* ====== Filtri ====== */
+    distritoFilter.addEventListener("change", function(){
+      concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
+      const s = distritoConcelho[this.value];
+      if(s) Array.from(s).sort().forEach(c=> concelhoFilter.appendChild(new Option(c,c)));
+    });
+    applyFilter.addEventListener("click", ()=>{
+      filteredPointsLayer.removeAll();
+      const d = distritoFilter.value, c = concelhoFilter.value;
+      for(const g of allPoints){
+        const a=g.attributes||{};
+        if((!d || a.distrito===d) && (!c || a.concelho===c)){
+          const gg = g.clone(); gg.symbol = symFiltered; filteredPointsLayer.add(gg);
         }
-
-        // Applichiamo un filtro client-side (FeatureEffect) su VIIRS
-        viirsLayer.featureEffect = {
-          filter: { where },
-          excludedEffect: "opacity(30%)"
-        };
-
-        // Mostriamo un conto approssimativo (client-side)
-        results.innerHTML = `<div>Filtro aplicado: <code>${where}</code></div><div>A carregar contagem…</div>`;
-        viirsLayer.queryFeatureCount({ where }).then(cnt => {
-          results.innerHTML = `<div>Filtro aplicado: <code>${where}</code></div><div><strong>Resultados:</strong> ${cnt}</div>`;
-        }).catch(()=>{ results.innerHTML += "<div>Não foi possível contar.</div>"; });
       }
+      const tgt = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : waterLayer.graphics.items;
+      fitToGraphics(tgt, 60); if(view.center) findNearest(view.center);
+    });
+    resetFilter.addEventListener("click", ()=>{
+      distritoFilter.value=""; concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
+      filteredPointsLayer.removeAll(); fitToGraphics(waterLayer.graphics.items, 60); if(view.center) findNearest(view.center);
+    });
 
-      btnApply.addEventListener("click", applyFilter);
-
-      btnClear.addEventListener("click", () => {
-        viirsLayer.featureEffect = null;
-        results.innerHTML = "<em>Nenhum resultado ainda.</em>";
-        valInp.value = "";
-      });
-
-    } catch(e){
-      console.error(e);
-      alert("Erro ao carregar camadas (GeoJSON). Verifique os URLs.");
+    function fitToGraphics(graphics, padding=40){
+      if(!graphics || !graphics.length) return;
+      let xmin=Infinity, ymin=Infinity, xmax=-Infinity, ymax=-Infinity;
+      for(const g of graphics){
+        const geom=g.geometry; if(!geom) continue;
+        const x = geom.longitude ?? geom.x, y = geom.latitude ?? geom.y;
+        if(typeof x!=='number' || typeof y!=='number') continue;
+        if(x<xmin) xmin=x; if(y<ymin) ymin=y; if(x>xmax) xmax=x; if(y>ymax) ymax=y;
+      }
+      if(!isFinite(xmin)||!isFinite(ymin)||!isFinite(ymax)) return;
+      const ext = new Extent({ xmin, ymin, xmax, ymax, spatialReference:{ wkid:4326 } });
+      view.goTo({ target:ext, padding }).catch(()=>{});
     }
 
-    /************** UI: pannello filtro richiudibile **************/
-    const panel = document.getElementById("filterPanel");
-    const header = document.getElementById("filterHeader");
-    const chev = document.getElementById("chev");
-    header.addEventListener("click", () => {
-      const collapsed = panel.classList.toggle("collapsed");
-      chev.className = collapsed ? "fa-solid fa-chevron-down" : "fa-solid fa-chevron-up";
+    /* ====== Nearest ====== */
+    function buildSpatialGrid(points, gridSize=0.5){
+      spatialGrid={};
+      for(const p of points){
+        const lon=p.geometry.longitude, lat=p.geometry.latitude;
+        const gx=Math.floor(lon/gridSize), gy=Math.floor(lat/gridSize);
+        const key=`${gx},${gy}`; if(!spatialGrid[key]) spatialGrid[key]=[];
+        spatialGrid[key].push(p);
+      }
+    }
+    function haversineMeters(a,b){
+      const R=6371000, toRad=d=>d*Math.PI/180;
+      const dLat=toRad(b.latitude-a.latitude), dLon=toRad(b.longitude-a.longitude);
+      const lat1=toRad(a.latitude), lat2=toRad(b.latitude);
+      const s=Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+      return Math.round(2*R*Math.asin(Math.sqrt(s)));
+    }
+    function findNearest(pt){
+      if(!allPoints.length || !pt) return;
+      linesLayer.removeAll();
+      if(Object.keys(spatialGrid).length===0) buildSpatialGrid(allPoints);
+
+      const active = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : allPoints;
+      const gridSize=0.5, gx=Math.floor(pt.longitude/gridSize), gy=Math.floor(pt.latitude/gridSize);
+      let candidates=[];
+      for(let x=gx-2; x<=gx+2; x++){
+        for(let y=gy-2; y<=gy+2; y++){
+          const key=`${x},${y}`; const cell=spatialGrid[key]; if(!cell) continue;
+          for(const g of cell) if(active.includes(g)){
+            candidates.push({ feature:g, distance:haversineMeters(pt, g.geometry) });
+          }
+        }
+      }
+      if(candidates.length<4) candidates = active.map(g=>({ feature:g, distance:haversineMeters(pt, g.geometry) }));
+      nearest = candidates.filter(o=> o.distance<=10000).sort((a,b)=>a.distance-b.distance).slice(0,4);
+      for(const item of nearest){
+        const line=new Polyline({ paths:[[pt.longitude,pt.latitude],[item.feature.geometry.longitude,item.feature.geometry.latitude]], spatialReference:{ wkid:4326 } });
+        linesLayer.add(new Graphic({ geometry:line, symbol:symLine }));
+      }
+      renderInfo();
+    }
+    function renderInfo(){
+      let html="<ul style='margin:0; padding-left:16px; font-size:12px;'>";
+      if(!nearest.length){ html+="<li>Nenhum ponto encontrado (≤ 10 km)</li>"; }
+      else {
+        for(const o of nearest){
+          const a=o.feature.attributes||{}; const name=a.nomenome||a.nome||"Sem nome";
+          const type=a.tipologia?(" ("+a.tipologia+")"):"";
+          html+="<li>"+name+type+" — "+o.distance+" m</li>";
+        }
+      }
+      html+="</ul>";
+      infoContent.innerHTML=html;
+    }
+    view.on("pointer-move", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    view.on("pointer-down", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
+    view.when(()=>{ if(view.center) findNearest(view.center); });
+
+    /* ====== VIIRS ultimi 2 giorni + bounding box Europa ====== */
+    const VIIRS_QUERY_BASE =
+      "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
+    function viirsGeoJsonUrl(){
+      const d = new Date(); d.setUTCDate(d.getUTCDate() - 2);
+      const yyyy = d.getUTCFullYear(), mm = String(d.getUTCMonth()+1).padStart(2,"0"), dd = String(d.getUTCDate()).padStart(2,"0");
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const bbox = { xmin:-12, ymin:34, xmax:32, ymax:72, spatialReference:{ wkid:4326 } };
+      const qs = new URLSearchParams({
+        where: `acq_date >= DATE '${dateStr}'`,
+        outFields: "*",
+        outSR: "4326",
+        f: "geojson",
+        geometry: JSON.stringify(bbox),
+        geometryType: "esriGeometryEnvelope",
+        spatialRel: "esriSpatialRelIntersects",
+        inSR: "4326"
+      }).toString();
+      return `${VIIRS_QUERY_BASE}?${qs}`;
+    }
+
+    async function loadVIIRSAll(){
+      try{
+        showLoader("A carregar incêndios…");
+        const res = await fetch(viirsGeoJsonUrl(), { method:"GET", mode:"cors", credentials:"omit", cache:"no-store" });
+        const gj = await res.json();
+        drawVIIRS(gj.features||[]);
+        showToast("Incêndios VIIRS: ON");
+      } catch(err){
+        console.error("VIIRS fetch error:", err);
+        showToast("Falha ao carregar incêndios");
+        clearVIIRS();
+        btnFireHeader.setAttribute("aria-pressed","false");
+      } finally { hideLoader(); }
+    }
+    function drawVIIRS(features){
+      viirsLayer.removeAll();
+      for(const f of features){
+        const c = f.geometry && f.geometry.coordinates; if(!c) continue;
+        const attrs = f.properties || {};
+        viirsLayer.add(new Graphic({
+          geometry: { type:"point", longitude:+c[0], latitude:+c[1] },
+          attributes: attrs,
+          symbol: symFire,
+          popupTemplate: { title:"VIIRS hotspot", content: viirsPopupContent(attrs) }
+        }));
+      }
+    }
+    function clearVIIRS(){ viirsLayer.removeAll(); }
+
+    // Parser data/ora + contenuto popup VIIRS
+    function viirsDate(a){
+      const dkey = pickKey(a, /^(acq[_]?date)$/i);
+      const tkey = pickKey(a, /^(acq[_]?time)$/i);
+      let hh = 0, mm = 0;
+      if (tkey != null && a[tkey] != null) {
+        const rawT = String(a[tkey]).trim().replace(":", "");
+        if (/^\d{1,4}$/.test(rawT)) {
+          const n = parseInt(rawT, 10);
+          if (n > 2400) { hh = Math.floor(n/60)%24; mm = n%60; }
+          else { hh = Math.floor(n/100)%24; mm = n%100; }
+        }
+      }
+      if (dkey != null) {
+        const v = a[dkey];
+        if (typeof v === "number") {
+          const ms = v > 1e12 ? v : v*1000; const d = new Date(ms);
+          if (!isNaN(d)) { d.setUTCHours(hh, mm, 0, 0); return d; }
+        } else if (typeof v === "string") {
+          const s = v.trim();
+          if (/^\d{10}$/.test(s) || /^\d{13}$/.test(s)) {
+            const num = Number(s); const ms = s.length===13 ? num : num*1000;
+            const d = new Date(ms); if (!isNaN(d)) { d.setUTCHours(hh, mm, 0, 0); return d; }
+          }
+          const p = Date.parse(s); if (!isNaN(p)) { const d = new Date(p); if (tkey!=null) d.setUTCHours(hh,mm,0,0); return d; }
+          const m = s.match(/^(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+          if (m) { const Y=+m[1], M=+m[2], D=+m[3]; const d = new Date(Date.UTC(Y,(M||1)-1,D||1,hh,mm,0)); if(!isNaN(d)) return d; }
+        }
+      }
+      const dtkey = pickKey(a, /(datetime|date)/i);
+      if (dtkey) {
+        const raw = a[dtkey];
+        if (typeof raw === "number") { const ms = raw>1e12?raw:raw*1000; const d=new Date(ms); if(!isNaN(d)) return d; }
+        else if (typeof raw === "string") { const s=raw.trim(); const p=Date.parse(s); if(!isNaN(p)) return new Date(p); }
+      }
+      return null;
+    }
+    function viirsPopupContent(a){
+      const dt = viirsDate(a);
+      const dtTxt = dt ? new Intl.DateTimeFormat(navigator.language||"pt-PT",{ dateStyle:"medium", timeStyle:"short" }).format(dt) : "—";
+      const frp = a.frp!=null ? Number(a.frp).toFixed(1)+" MW" : "—";
+      const bright = a.brightness!=null ? Number(a.brightness).toFixed(0)+" K"
+                    : (a.brightness_ti4!=null ? Number(a.brightness_ti4).toFixed(0)+" K" : "—");
+      const dn = a.daynight || a.DayNight || "—";
+      const conf = a.confidence!=null ? a.confidence
+                  : (a.confidence_day!=null ? a.confidence_day
+                  : (a.confidence_night!=null ? a.confidence_night : "—"));
+      return `
+        <table class="info-table"><tbody>
+          <tr><th>Data/ora</th><td>${dtTxt}</td></tr>
+          <tr><th>FRP</th><td>${frp}</td></tr>
+          <tr><th>Brightness</th><td>${bright}</td></tr>
+          <tr><th>Day/Night</th><td>${dn}</td></tr>
+          <tr><th>Confidence</th><td>${conf}</td></tr>
+        </tbody></table>
+      `;
+    }
+    function pickKey(obj, re){ for(const k in obj){ if(re.test(k)) return k; } return null; }
+
+    // Toggle fiamma
+    btnFireHeader.addEventListener("click", ()=>{
+      const on = btnFireHeader.getAttribute("aria-pressed")==="true";
+      if(on){ btnFireHeader.setAttribute("aria-pressed","false"); clearVIIRS(); showToast("Incêndios VIIRS: OFF"); }
+      else { btnFireHeader.setAttribute("aria-pressed","true"); loadVIIRSAll(); }
     });
 
-    document.getElementById("toggleResults").addEventListener("click", () => {
-      const res = document.getElementById("results");
-      res.classList.toggle("collapsed");
-    });
+    /* Collapsible pannelli */
+    function togglePanel(panel, btn){
+      const collapsed = panel.dataset.state==="collapsed";
+      if(collapsed){ panel.dataset.state="expanded"; panel.style.maxHeight="50%"; btn.textContent = (btn.id==="toggleInfo" ? "📋" : "⚙️"); }
+      else { panel.dataset.state="collapsed"; panel.style.maxHeight="24px"; btn.textContent="▶"; }
+    }
+    toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
+    toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
+
+    const small = Math.max(window.innerWidth, window.innerHeight) < 700;
+    if(small){ togglePanel(infoPanel, toggleInfo); togglePanel(filterPanel, toggleFilter); }
 
   });
-</script>
+  </script>
 </body>
 </html>
