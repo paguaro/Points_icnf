@@ -600,38 +600,90 @@ function viirsPopup(attrs, lon, lat){
       redrawVIIRS();
     }
     function redrawVIIRS(){
-      viirsLayer.removeAll();
-      const scale = view.scale || 1000000;
-      for (const f of viirsFeaturesCache){
-        const c = f.geometry && f.geometry.coordinates;
-        if (!c) continue;
-        const attrs = f.properties || {};
-        const lon = +c[0], lat = +c[1];
+  viirsLayer.removeAll();
+  const scale = view.scale || 1000000;
+  
+  // Trova l'incendio più recente
+  let mostRecentFire = null;
+  let mostRecentTime = 0;
+  
+  for (const f of viirsFeaturesCache) {
+    const attrs = f.properties || {};
+    const acquiredIso = getAcquiredUTCString(attrs);
+    const acquiredTime = acquiredIso ? new Date(acquiredIso).getTime() : 0;
+    
+    if (acquiredTime > mostRecentTime) {
+      mostRecentTime = acquiredTime;
+      mostRecentFire = f;
+    }
+  }
+  
+  // Disegna tutti i punti VIIRS
+  for (const f of viirsFeaturesCache) {
+    const c = f.geometry && f.geometry.coordinates;
+    if (!c) continue;
+    const attrs = f.properties || {};
+    const lon = +c[0], lat = +c[1];
+    const isMostRecent = f === mostRecentFire;
 
-        const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
-        const h = hoursSinceFromAttrs(attrs);
-        const a = viirsAlpha(h);
-        const sizes = viirsClass(frp);
-        const delta = sizeDeltaForScale(scale);
+    const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
+    const h = hoursSinceFromAttrs(attrs);
+    const a = viirsAlpha(h);
+    const sizes = viirsClass(frp);
+    const delta = sizeDeltaForScale(scale);
 
-        // Halo (giallo) per FRP alti
-        if (sizes.halo){
-          viirsLayer.add(new Graphic({
-            geometry: { type:"point", longitude: lon, latitude: lat },
-            attributes: attrs,
-            symbol: new SimpleMarkerSymbol({ style:"circle", color:[255,235,59, Math.min(1, a*0.9)], size: sizes.halo + delta, outline:{ color:[255,255,255,0], width:0 } }),
-            popupTemplate: viirsPopup(attrs, lon, lat)
-          }));
-        }
-        // Core (rosso)
+    // Simbolo speciale per l'incendio più recente
+    if (isMostRecent) {
+      // Halo (giallo) con effetto glow
+      viirsLayer.add(new Graphic({
+        geometry: { type:"point", longitude: lon, latitude: lat },
+        attributes: attrs,
+        symbol: new SimpleMarkerSymbol({ 
+          style:"circle", 
+          color:[255,235,59, Math.min(1, a*0.9)], 
+          size: sizes.halo + delta + 4, 
+          outline:{ color:[255,255,255,0], width:0 } 
+        }),
+        popupTemplate: viirsPopup(attrs, lon, lat)
+      }));
+      
+      // Core (rosso) con effetto pulsante
+      viirsLayer.add(new Graphic({
+        geometry: { type:"point", longitude: lon, latitude: lat },
+        attributes: attrs,
+        symbol: new SimpleMarkerSymbol({ 
+          style:"circle", 
+          color:[255,0,0, a], 
+          size: sizes.core + delta + 2, 
+          outline:{ color:[255,255,255,0.8], width:1.5 } 
+        }),
+        popupTemplate: viirsPopup(attrs, lon, lat)
+      }));
+    } else {
+      // Simboli normali per tutti gli altri incendi
+      if (sizes.halo){
         viirsLayer.add(new Graphic({
           geometry: { type:"point", longitude: lon, latitude: lat },
           attributes: attrs,
-          symbol: new SimpleMarkerSymbol({ style:"circle", color:[229,57,53, a], size: sizes.core + delta, outline:{ color:[60,0,0, a], width:0 } }),
+          symbol: new SimpleMarkerSymbol({ style:"circle", color:[255,235,59, Math.min(1, a*0.9)], size: sizes.halo + delta, outline:{ color:[255,255,255,0], width:0 } }),
           popupTemplate: viirsPopup(attrs, lon, lat)
         }));
       }
+      
+      viirsLayer.add(new Graphic({
+        geometry: { type:"point", longitude: lon, latitude: lat },
+        attributes: attrs,
+        symbol: new SimpleMarkerSymbol({ style:"circle", color:[229,57,53, a], size: sizes.core + delta, outline:{ color:[60,0,0, a], width:0 } }),
+        popupTemplate: viirsPopup(attrs, lon, lat)
+      }));
     }
+  }
+  
+  // Aggiungi animazione per l'incendio più recente
+  if (mostRecentFire) {
+    animateMostRecentFire(mostRecentFire);
+  }
+}
     function clearVIIRS(){ viirsLayer.removeAll(); viirsFeaturesCache = []; }
 
     // Toggle fiamma
@@ -651,7 +703,47 @@ function viirsPopup(attrs, lon, lat){
 
     // Ridisegna simboli alla variazione di scala
     view.watch("scale", ()=>{ if (viirsOn && viirsFeaturesCache.length) redrawVIIRS(); });
-
+function animateMostRecentFire(fireFeature) {
+  const c = fireFeature.geometry.coordinates;
+  const lon = +c[0], lat = +c[1];
+  const attrs = fireFeature.properties || {};
+  const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
+  const sizes = viirsClass(frp);
+  const scale = view.scale || 1000000;
+  const delta = sizeDeltaForScale(scale);
+  
+  // Crea un simbolo animato con effetto pulsante
+  const pulseGraphic = new Graphic({
+    geometry: { type:"point", longitude: lon, latitude: lat },
+    symbol: new SimpleMarkerSymbol({
+      style:"circle",
+      color:[255,255,255,0.3],
+      size: sizes.halo ? sizes.halo + delta + 80 : sizes.core + delta + 7,
+      outline:{ color:[255,250,0,0.6], width:2 }
+    })
+  });
+  
+  viirsLayer.add(pulseGraphic);
+  
+  // Animazione di pulsazione
+  let size = sizes.halo ? sizes.halo + delta + 30 : sizes.core + delta + 6;
+  let growing = false;
+  
+  const pulseAnimation = setInterval(() => {
+    if (!viirsOn) {
+      clearInterval(pulseAnimation);
+      return;
+    }
+    
+    size = growing ? size + 10 : size - 10;
+    
+    if (size >= (sizes.halo ? sizes.halo + delta + 12 : sizes.core + delta + 10)) growing = false;
+    if (size <= (sizes.halo ? sizes.halo + delta + 6 : sizes.core + delta + 4)) growing = true;
+    
+    pulseGraphic.symbol.size = size;
+    viirsLayer.refresh();
+  }, 150);
+}
   }); // fine require
   </script>
 </body>
