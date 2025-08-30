@@ -152,7 +152,7 @@
     const symFiltered = new SimpleMarkerSymbol({ color:[255,64,64,0.9], outline:{ color:[255,230,120], width:1 }, size:6 });
     const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9], outline:{ color:[255,255,255], width:2 }, size:10 });
     const symLine = new SimpleLineSymbol({ color:[255,0,0,0.6], width:1.5, style:"short-dash" });
-    const symFire = { type:"simple-marker", size:6, color:[255,64,0,0.9], outline:null }; // "nudo"
+    const symFire = new SimpleMarkerSymbol({ color:[255,64,0,0.9], outline:null, size:6 });
 
     /* ====== Util ====== */
     function showToast(msg, ms=2000){
@@ -183,8 +183,8 @@
       .catch(e=> { console.warn(e); showError("Falha ao carregar pontos de água."); })
       .finally(()=> loadingMsg.classList.add("hidden"));
 
-    // Template popup unificato con icone personalizzate
-    function createPopupTemplate(attrs) {
+    // Template popup unificato con icone personalizzate per punti acqua
+    function createWaterPopupTemplate(attrs) {
       return {
         title: attrs.nome || attrs.tipologia || "Ponto de água",
         content: function(event) {
@@ -219,6 +219,38 @@
       };
     }
 
+    // Template popup per punti VIIRS
+    function createVIIRSPopupTemplate() {
+      return {
+        title: "Ponto de Calor VIIRS",
+        content: function(event) {
+          const graphic = event.graphic;
+          const attrs = graphic.attributes || {};
+          const geom = graphic.geometry;
+          const lat = Number(geom.latitude).toFixed(6);
+          const lon = Number(geom.longitude).toFixed(6);
+          
+          return buildTable(attrs) +
+            "<div style='margin-top:8px;'>" +
+            "<strong>Coordenadas:</strong> " + lat + ", " + lon +
+            "</div>";
+        },
+        actions: [{
+          title: "Waze",
+          id: "open-waze",
+          image: "waze-icon.png"
+        }, {
+          title: "Google Maps", 
+          id: "open-google-maps",
+          image: "google-maps-icon.png"
+        }, {
+          title: "Copiar Coordenadas",
+          id: "copy-coords",
+          image: "coordinates-icon.png"
+        }]
+      };
+    }
+
     function ingestWater(features){
       for(const f of features){
         const c = f.geometry && f.geometry.coordinates;
@@ -229,7 +261,7 @@
           geometry:pt, 
           attributes:attrs, 
           symbol:symWater,
-          popupTemplate: createPopupTemplate(attrs)
+          popupTemplate: createWaterPopupTemplate(attrs)
         });
         allPoints.push(g); waterLayer.add(g);
 
@@ -493,7 +525,7 @@
           geometry: { type:"point", longitude:+c[0], latitude:+c[1] },
           attributes: f.properties || {},
           symbol: symFire,
-          popupTemplate: null
+          popupTemplate: createVIIRSPopupTemplate()
         }));
       }
     }
