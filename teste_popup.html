@@ -219,10 +219,13 @@
       };
     }
 
-    // Template popup per punti VIIRS
-    function createVIIRSPopupTemplate() {
+    // Template popup per punti VIIRS con titolo personalizzato
+    function createVIIRSPopupTemplate(attrs) {
+      const frp = attrs.Frp || attrs.frp || "N/A";
+      const hoursOld = attrs["Hours Old"] || attrs.hours_old || "N/A";
+      
       return {
-        title: "Ponto de Calor VIIRS",
+        title: `VIIRS FRP: ${frp} | Hours Old: ${hoursOld}`,
         content: function(event) {
           const graphic = event.graphic;
           const attrs = graphic.attributes || {};
@@ -230,10 +233,30 @@
           const lat = Number(geom.latitude).toFixed(6);
           const lon = Number(geom.longitude).toFixed(6);
           
-          return buildTable(attrs) +
-            "<div style='margin-top:8px;'>" +
-            "<strong>Coordenadas:</strong> " + lat + ", " + lon +
-            "</div>";
+          // Filtra e formatta i campi specifici VIIRS
+          const viirsFields = [
+            "Acq Date", "Acq Time", "Bright Ti4", "Bright Ti5", "Confidence", 
+            "Daynight", "Esritimeutc", "Frp", "Hours Old", "Latitude", "Longitude",
+            "OBJECTID", "Satellite", "Scan", "Track", "Version"
+          ];
+          
+          let content = "<table class='info-table'><tbody>";
+          
+          for (const field of viirsFields) {
+            // Cerca il campo con diversi formati (camelCase, snake_case, ecc.)
+            const value = attrs[field] || attrs[field.toLowerCase()] || 
+                          attrs[field.replace(/\s+/g, '_').toLowerCase()] || 
+                          attrs[field.replace(/\s+/g, '')] || "N/A";
+            
+            if (value !== "N/A") {
+              content += `<tr><th>${field}</th><td>${value}</td></tr>`;
+            }
+          }
+          
+          content += "</tbody></table>";
+          content += "<div style='margin-top:8px;'><strong>Coordenadas:</strong> " + lat + ", " + lon + "</div>";
+          
+          return content;
         },
         actions: [{
           title: "Waze",
@@ -525,7 +548,7 @@
           geometry: { type:"point", longitude:+c[0], latitude:+c[1] },
           attributes: f.properties || {},
           symbol: symFire,
-          popupTemplate: createVIIRSPopupTemplate()
+          popupTemplate: createVIIRSPopupTemplate(f.properties || {})
         }));
       }
     }
