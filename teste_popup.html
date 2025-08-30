@@ -346,7 +346,7 @@
             showToast("Coordenadas copiadas!");
             break;
             
-          case "copy-geojson":
+  case "copy-geojson":
             copyGeoJSON(attrs, lat, lon);
             break;
         }
@@ -525,88 +525,151 @@
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
 
     function viirsGeoJsonUrl(){
-      const qs = new URLSearchParams({
-        where: "1=1",     // carichiamo tutto (niente selettori data)
+      // Envelope Europa (WGS84)
+      const europeEnv = {
+        xmin: -31, ymin: 35, xmax: 5, ymax: 44,
+        spatialReference: { wkid: 4326 }
+      };
+
+      // Ultime 72 ore (UTC, millisecondi)
+      const endMs = Date.now();
+      const startMs = endMs - 96 * 3600 * 1000;
+
+      const params = new URLSearchParams({
+        where: "1=1",
         outFields: "*",
         outSR: "4326",
-        f: "geojson"
-      }).toString();
-      return `${VIIRS_QUERY_BASE}?${qs}`;
+        f: "geojson",
+        returnGeometry: "true",
+        geometry: JSON.stringify(europeEnv),
+        geometryType: "esriGeometryEnvelope",
+        inSR: "4326",
+        spatialRel: "esriSpatialRelIntersects",
+        // filtro temporale nativo (il layer è time-enabled su acq_time)
+        time: `${startMs},${endMs}`
+      });
+
+      return `${VIIRS_QUERY_BASE}?${params.toString()}`;
     }
 
+    let viirsFeaturesCache = [];
+    let viirsOn = false;
+
     async function loadVIIRSAll(){
-      if (isVIIRSLoading) return;
-      
-      isVIIRSLoading = true;
-      showToast("A carregar dados VIIRS...");
-      
       try{
-        // Usando esriRequest invece di fetch per evitare problemi CORS
-        const response = await esriRequest(viirsGeoJsonUrl(), {
-          responseType: "json",
-          query: {}
-        });
-        
-        if(!response.data || !Array.isArray(response.data.features)) {
-          throw new Error("Dados VIIRS não válidos");
-        }
-        
-        drawVIIRS(response.data.features);
+        const url = viirsGeoJsonUrl();
+        const res = await fetch(url, { method:"GET", mode:"cors", credentials:"omit", cache:"no-store" });
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const gj = await res.json();
+        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON não válido");
+        drawVIIRS(gj.features);
         showToast("Incêndios VIIRS: ON");
       } catch(err){
         console.error("VIIRS fetch error:", err);
         showError("Falha ao carregar dados de incêndios (VIIRS).");
         clearVIIRS();
         btnFire.setAttribute("aria-pressed","false");
-      } finally {
-        isVIIRSLoading = false;
+        viirsOn = false;
       }
     }
-
     function drawVIIRS(features){
+      viirsFeaturesCache = features || [];
+      redrawVIIRS();
+    }
+    function redrawVIIRS(){
       viirsLayer.removeAll();
-      for(const f of features){
+      const scale = view.scale || 1000000;
+      for (const f of viirsFeaturesCache){
         const c = f.geometry && f.geometry.coordinates;
-        if(!c) continue;
-        
-        // Preparazione attributi per il popup
-        const attributes = {
-          ...f.properties,
-          // Aggiungi campi standardizzati
-          Frp: f.properties.Frp || f.properties.frp,
-          "Hours Old": f.properties["Hours Old"] || f.properties.hours_old,
-          "Acq Date": f.properties["Acq Date"] || f.properties.acq_date,
-          "Acq Time": f.properties["Acq Time"] || f.properties.acq_time,
-          Confidence: f.properties.Confidence || f.properties.confidence,
-          Satellite: f.properties.Satellite || f.properties.satellite,
-          Version: f.properties.Version || f.properties.version
-        };
-        
+        if (!c) continue;
+        const attrs = f.properties || {};
+        const lon = +c[0], lat = +c[1];
+
+        const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
+        const h = hoursSinceFromAttrs(attrs);
+        const a = viirsAlpha(h);
+        const sizes = viirsClass(frp);
+        const delta = sizeDeltaForScale(scale);
+
+        // Halo (giallo) per FRP alti
+        if (sizes.halo){
+          viirsLayer.add(new Graphic({
+            geometry: { type:"point", longitude: lon, latitude: lat },
+            attributes: attrs,
+            symbol: new SimpleMarkerSymbol({ style:"circle", color:[255,235,59, Math.min(1, a*0.9)], size: sizes.halo + delta, outline:{ color:[255,255,255,0], width:0 } }),
+            popupTemplate: createVIIRSPopupTemplate(attrs)
+          }));
+        }
+        // Core (rosso)
         viirsLayer.add(new Graphic({
-          geometry: new Point({ longitude: +c[0], latitude: +c[1] }),
-          attributes: attributes,
-          symbol: symFire,
-          popupTemplate: createVIIRSPopupTemplate(attributes)
+          geometry: { type:"point", longitude: lon, latitude: lat },
+          attributes: attrs,
+          symbol: new SimpleMarkerSymbol({ style:"circle", color:[229,57,53, a], size: sizes.core + delta, outline:{ color:[60,0,0, a], width:0 } }),
+          popupTemplate: createVIIRSPopupTemplate(attrs)
         }));
       }
     }
-    
-    function clearVIIRS(){ 
-      viirsLayer.removeAll(); 
-    }
+    function clearVIIRS(){ viirsLayer.removeAll(); viirsFeaturesCache = []; }
 
     // Toggle fiamma
     btnFire.addEventListener("click", ()=>{
       const on = btnFire.getAttribute("aria-pressed")==="true";
       if(on){
         btnFire.setAttribute("aria-pressed","false");
+        viirsOn = false;
         clearVIIRS();
         showToast("Incêndios VIIRS: OFF");
       } else {
         btnFire.setAttribute("aria-pressed","true");
-        loadVIIRSAll(); // carica tutto (nessun selettore date)
+        viirsOn = true;
+        loadVIIRSAll();
       }
     });
+
+    // Ridisegna simboli alla variazione di scala
+    view.watch("scale", ()=>{ if (viirsOn && viirsFeaturesCache.length) redrawVIIRS(); });
+
+    /* ====== Funzioni VIIRS dal file originale ====== */
+    function viirsAlpha(hours){
+      if (hours == null || !isFinite(hours)) return 1;
+      if (hours <= 12) return 1;
+      if (hours >= 36) return 0.25;
+      const t = (hours - 12) / 24;
+      return 1 - 0.75 * t;
+    }
+    
+    function hoursSinceFromAttrs(attrs){
+      if (attrs.esritimeutc) {
+        const ms = Number(attrs.esritimeutc);
+        if (Number.isFinite(ms)) return (Date.now() - ms) / 36e5;
+      }
+      if (attrs.ACQ_DATE && attrs.ACQ_TIME){
+        try{
+          const d = new Date(attrs.ACQ_DATE);
+          const t = String(attrs.ACQ_TIME).padStart(4,'0');
+          d.setUTCHours(Number(t.slice(0,2)), Number(t.slice(2,4)), 0, 0);
+          return (Date.now() - d.getTime()) / 36e5;
+        }catch(_){}
+      }
+      return null;
+    }
+    
+    function viirsClass(frp){
+      if (frp > 750) return { core: 12, halo: 18 };
+      if (frp > 300) return { core: 10, halo: 14 };
+      if (frp > 100) return { core:  8, halo:  0 };
+      if (frp > 10)  return { core:  6, halo:  0 };
+      return             { core:  4, halo:  0 };
+    }
+    
+    function sizeDeltaForScale(scale){
+      if (scale > 2000000) return 0;
+      if (scale > 1000000) return 1;
+      if (scale >  500000) return 2;
+      if (scale >  250000) return 2;
+      if (scale >   35000) return 3;
+      return 3;
+    }
 
   });
   </script>
