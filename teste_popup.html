@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8" />
+<title>Pontos de água ICNF + VIIRS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<link rel="stylesheet" href="https://js.arcgis.com/4.33/esri/themes/light/main.css" />
+<style>
+  html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
+  .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select { font-size:12px; line-height:1.2; }
+
+  /* Barra icone (GPS + FUOCO) in alto a destra */
+  .iconbar { position:absolute; top:20px; right:10px; z-index:6; display:flex; gap:6px; align-items:center; }
+  .iconbtn { background:transparent; border:none; cursor:pointer; padding:6px; min-width:36px; font-size:22px; line-height:1; border-radius:8px; }
+  /* FUOCO "nudo": OFF=grigio, ON=colore naturale */
+  #btnFire { filter:grayscale(1) brightness(.8); transition:filter .15s ease, transform .08s ease; }
+  #btnFire[aria-pressed="true"] { filter:none; }
+  .iconbtn:active { transform:scale(.96); }
+
+  /* Pannelli */
+  #infoPanel, #filterPanel {
+    position:absolute; background:#fff; padding:6px 8px; border-radius:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.15); font-size:9px; z-index:5; max-height:50%;
+    overflow-y:auto;
+  }
+  #infoPanel { top:110px; right:10px; width:min(260px,42vw); }
+  #filterPanel { top:130px; left:10px; width:min(180px,32vw); }
+
+  .toggle-chip {
+    position:absolute; top:4px; left:4px; background:#f2f2f2; border:1px solid #ddd;
+    cursor:pointer; border-radius:6px; padding:2px 6px; font-size:14px; line-height:1.1; user-select:none;
+  }
+  .panel-title { display:block; margin-left:22px; margin-bottom:4px; font-size:9px; font-weight:600; }
+
+  select, button { width:100%; padding:8px 10px; margin:4px 0; box-sizing:border-box; font-size:12px; border-radius:8px; }
+  button { background-color:#0079c1; color:#fff; border:none; cursor:pointer; }
+  button:hover { background-color:#005a8c; }
+  .btn-ghost { background:#fff; color:#000; border:1px solid #ccc; }
+
+  .info-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .info-table th, .info-table td { text-align:left; padding:2px 4px; border-bottom:1px dotted #eee; vertical-align:top; word-break:break-word; }
+  .info-table th { width:40%; color:#444; font-weight:600; }
+
+  /* Toast */
+  #toast {
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    background:#323232; color:#fff; padding:8px 12px; border-radius:6px;
+    z-index:10; display:none; font-size:13px; box-shadow:0 3px 10px rgba(0,0,0,.2);
+  }
+  /* Messaggio errore */
+  #error {
+    position:absolute; top:50px; left:50%; transform:translateX(-50%);
+    background:#d32f2f; color:#fff; padding:8px 12px; border-radius:6px;
+    z-index:10; display:none; font-size:13px; box-shadow:0 3px 10px rgba(0,0,0,.2);
+  }
+  /* Loader iniziale */
+  #loadingMessage { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:7; }
+  #loadingBox { background:#fff; padding:12px 14px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
+
+  /* Stile per nascondere le icone Esri originali */
+  .esri-popup__button .esri-icon {
+    display: none !important;
+  }
+</style>
+</head>
+<body>
+  <div id="viewDiv"></div>
+
+  <!-- Barra icone: GPS + FUOCO -->
+  <div class="iconbar">
+    <button id="btnGPS" class="iconbtn" title="Localizar-me">📍</button>
+    <button id="btnFire" class="iconbtn" title="Incêndios (VIIRS)" aria-pressed="false">🔥</button>
+  </div>
+
+  <!-- Pannello info "ponti vicini" -->
+  <div id="infoPanel" aria-live="polite">
+    <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
+    <div id="infoContent"></div>
+  </div>
+
+  <!-- Pannello filtro (ricerca punti d'acqua) -->
+  <div id="filterPanel">
+    <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
+    <strong class="panel-title">Filtrar</strong>
+    <select id="distritoFilter" aria-label="Filtrar por distrito"><option value="">Todos os distritos</option></select>
+    <select id="concelhoFilter" aria-label="Filtrar por concelho"><option value="">Todos os concelhos</option></select>
+    <div style="display:flex; gap:6px; margin-top:4px;">
+      <button id="applyFilter" style="flex:1;">Aplicar</button>
+      <button id="resetFilter" class="btn-ghost" style="flex:1;">Repor</button>
+    </div>
+  </div>
+
+  <!-- Toast + Error + Loader -->
+  <div id="toast"></div>
+  <div id="error"></div>
+  <div id="loadingMessage"><div id="loadingBox">A carregar dados…</div></div>
+
+  <script src="https://js.arcgis.com/4.33/"></script>
+  <script>
+  require([
+    "esri/Map","esri/views/MapView",
+    "esri/layers/GraphicsLayer","esri/Graphic",
+    "esri/geometry/Point","esri/geometry/Polyline","esri/geometry/Extent",
+    "esri/symbols/SimpleMarkerSymbol","esri/symbols/SimpleLineSymbol",
+    "esri/widgets/Search","esri/widgets/BasemapGallery","esri/widgets/Expand",
+    "esri/request", "esri/core/reactiveUtils"
+  ], function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,Extent,
+              SimpleMarkerSymbol,SimpleLineSymbol,Search,BasemapGallery,Expand,esriRequest, reactiveUtils){
+
+    /* ====== MAPPA & UI BASE ====== */
+    const map = new Map({ basemap: "streets-navigation-vector" });
+    const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7, popupEnabled:true });
+
+    const search = new Search({ view });
+    view.ui.add(search, { position:"top-right", index:1 });
+
+    const bg = new BasemapGallery({ view });
+    view.ui.add(new Expand({ view, content:bg, expandIconClass:"esri-icon-basemap" }), "bottom-right");
+
+    /* ====== LAYERS ====== */
+    const waterLayer = new GraphicsLayer(); map.add(waterLayer);
+    const filteredPointsLayer = new GraphicsLayer(); map.add(filteredPointsLayer);
+    const linesLayer = new GraphicsLayer(); map.add(linesLayer);
+    const locLayer = new GraphicsLayer(); map.add(locLayer);
+    const viirsLayer = new GraphicsLayer(); map.add(viirsLayer);
+
+    /* ====== UI elementi ====== */
+    const btnGPS = document.getElementById("btnGPS");
+    const btnFire = document.getElementById("btnFire");
+    const infoPanel = document.getElementById("infoPanel");
+    const infoContent = document.getElementById("infoContent");
+    const toggleInfo = document.getElementById("toggleInfo");
+    const filterPanel = document.getElementById("filterPanel");
+    const toggleFilter = document.getElementById("toggleFilter");
+    const distritoFilter = document.getElementById("distritoFilter");
+    const concelhoFilter = document.getElementById("concelhoFilter");
+    const applyFilter = document.getElementById("applyFilter");
+    const resetFilter = document.getElementById("resetFilter");
+    const toast = document.getElementById("toast");
+    const errorBox = document.getElementById("error");
+    const loadingMsg = document.getElementById("loadingMessage");
+
+    /* ====== Stato ====== */
+    const allPoints = [];      // Graphics dei punti acqua
+    const distritoConcelho = {};// mapa distrito -> Set(concelhos)
+    const uniqueDistritos = new Set();
+    let spatialGrid = {};      // accelerazione per nearest
+    let nearest = [];          // lista punti vicini correnti
+
+    /* ====== Simboli ====== */
+    const symWater = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[80,220,255], width:1 }, size:5 });
+    const symFiltered = new SimpleMarkerSymbol({ color:[255,64,64,0.9], outline:{ color:[255,230,120], width:1 }, size:6 });
+    const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9], outline:{ color:[255,255,255], width:2 }, size:10 });
+    const symLine = new SimpleLineSymbol({ color:[255,0,0,0.6], width:1.5, style:"short-dash" });
+    const symFire = { type:"simple-marker", size:6, color:[255,64,0,0.9], outline:null }; // "nudo"
+
+    /* ====== Util ====== */
+    function showToast(msg, ms=2000){
+      toast.textContent = msg; toast.style.display = "block";
+      clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display = "none", ms);
+    }
+    function showError(msg, ms=5000){
+      errorBox.textContent = msg; errorBox.style.display = "block";
+      clearTimeout(showError._t); showError._t = setTimeout(()=> errorBox.style.display = "none", ms);
+    }
+
+    function togglePanel(panel, btn){
+      const collapsed = panel.dataset.state==="collapsed";
+      if(collapsed){ panel.dataset.state="expanded"; panel.style.maxHeight="50%"; btn.textContent = (btn.id==="toggleInfo" ? "📋" : "⚙️"); }
+      else { panel.dataset.state="collapsed"; panel.style.maxHeight="24px"; btn.textContent="▶"; }
+    }
+    toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
+    toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
+
+    /* ====== Caricamento punti acqua (ICNF WFS) ====== */
+    const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
+
+    esriRequest(wfsUrl, { responseType:"json" })
+      .then(r=>{
+        const gj=r.data; if(!gj?.features) throw new Error("GeoJSON vazio.");
+        ingestWater(gj.features);
+      })
+      .catch(e=> { console.warn(e); showError("Falha ao carregar pontos de água."); })
+      .finally(()=> loadingMsg.classList.add("hidden"));
+
+    // Template popup unificato con icone personalizzate
+    function createPopupTemplate(attrs) {
+      return {
+        title: attrs.nome || attrs.tipologia || "Ponto de água",
+        content: function(event) {
+          const graphic = event.graphic;
+          const attrs = graphic.attributes || {};
+          const geom = graphic.geometry;
+          const lat = Number(geom.latitude).toFixed(6);
+          const lon = Number(geom.longitude).toFixed(6);
+          
+          return buildTable(attrs) +
+            "<div style='margin-top:8px;'>" +
+            "<strong>Coordenadas:</strong> " + lat + ", " + lon +
+            "</div>";
+        },
+        actions: [{
+          title: "Waze",
+          id: "open-waze",
+          image: "waze-icon.png"
+        }, {
+          title: "Google Maps", 
+          id: "open-google-maps",
+          image: "google-maps-icon.png"
+        }, {
+          title: "Copiar Coordenadas",
+          id: "copy-coords",
+          image: "coordinates-icon.png"
+        }, {
+          title: "Copiar GeoJSON",
+          id: "copy-geojson",
+          image: "geojson-icon.png"
+        }]
+      };
+    }
+
+    function ingestWater(features){
+      for(const f of features){
+        const c = f.geometry && f.geometry.coordinates;
+        if(!c) continue;
+        const pt = new Point({ longitude:+c[0], latitude:+c[1] });
+        const attrs = f.properties || {};
+        const g = new Graphic({
+          geometry:pt, 
+          attributes:attrs, 
+          symbol:symWater,
+          popupTemplate: createPopupTemplate(attrs)
+        });
+        allPoints.push(g); waterLayer.add(g);
+
+        const d = attrs.distrito || "Desconhecido";
+        const ccl = attrs.concelho || "Desconhecido";
+        uniqueDistritos.add(d);
+        if(!distritoConcelho[d]) distritoConcelho[d] = new Set();
+        distritoConcelho[d].add(ccl);
+      }
+      // Popola select
+      for(const d of Array.from(uniqueDistritos).sort()){ distritoFilter.appendChild(new Option(d,d)); }
+      // Nearest iniziale
+      if(view.center) findNearest(view.center);
+    }
+
+    function buildTable(attrs){
+      const rows = Object.entries(attrs||{}).filter(([k,v])=> v!=null && v!=="").sort((a,b)=> a[0].localeCompare(b[0]));
+      let html="<table class='info-table'><tbody>";
+      for(const [k,v] of rows){
+        const label=k.replace(/_/g," ").replace(/\b\w/g, l=>l.toUpperCase());
+        html += "<tr><th>"+label+"</th><td>"+v+"</td></tr>";
+      }
+      html += "</tbody></table>";
+      return html;
+    }
+
+    // Gestione azioni personalizzate nei popup
+    reactiveUtils.on(
+      () => view.popup,
+      "trigger-action",
+      (event) => {
+        const graphic = view.popup.selectedFeature;
+        if (!graphic) return;
+        
+        const geom = graphic.geometry;
+        const lat = geom.latitude.toFixed(6);
+        const lon = geom.longitude.toFixed(6);
+        const attrs = graphic.attributes;
+        
+        switch(event.action.id) {
+          case "open-waze":
+            openNavigation("waze", lat, lon);
+            break;
+            
+          case "open-google-maps":
+            openNavigation("google", lat, lon);
+            break;
+            
+          case "copy-coords":
+            copyToClipboard(`${lat}, ${lon}`);
+            showToast("Coordenadas copiadas!");
+            break;
+            
+          case "copy-geojson":
+            copyGeoJSON(attrs, lat, lon);
+            break;
+        }
+      }
+    );
+
+    function openNavigation(app, lat, lon) {
+      let url;
+      if (app === "waze") {
+        url = `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`;
+      } else {
+        url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+      }
+      window.open(url, '_blank');
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).catch(err => {
+        console.error("Erro ao copiar para a área de transferência:", err);
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      });
+    }
+
+    function copyGeoJSON(attributes, lat, lon) {
+      const geoJSON = {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [parseFloat(lon), parseFloat(lat)]
+        },
+        properties: {...attributes}
+      };
+      
+      copyToClipboard(JSON.stringify(geoJSON, null, 2));
+      showToast("GeoJSON copiado para a área de transferência!");
+    }
+
+    /* ====== Filtro distritos/concelhos ====== */
+    distritoFilter.addEventListener("change", function(){
+      concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
+      const s = distritoConcelho[this.value];
+      if(s) Array.from(s).sort().forEach(c=> concelhoFilter.appendChild(new Option(c,c)));
+    });
+
+    applyFilter.addEventListener("click", ()=>{
+      filteredPointsLayer.removeAll();
+      const d = distritoFilter.value, c = concelhoFilter.value;
+      const source = allPoints;
+      for(const g of source){
+        const a=g.attributes||{};
+        if((!d || a.distrito===d) && (!c || a.concelho===c)){
+          const gg = g.clone(); gg.symbol = symFiltered; filteredPointsLayer.add(gg);
+        }
+      }
+      const tgt = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : waterLayer.graphics.items;
+      fitToGraphics(tgt, 60);
+      if(view.center) findNearest(view.center);
+    });
+
+    resetFilter.addEventListener("click", ()=>{
+      distritoFilter.value=""; concelhoFilter.value="";
+      concelhoFilter.innerHTML = '<option value="">Todos os concelhos</option>';
+      filteredPointsLayer.removeAll();
+      fitToGraphics(waterLayer.graphics.items, 60);
+      if(view.center) findNearest(view.center);
+    });
+
+    function fitToGraphics(graphics, padding=40){
+      if(!graphics || !graphics.length) return;
+      let xmin=Infinity, ymin=Infinity, xmax=-Infinity, ymax=-Infinity;
+      for(const g of graphics){
+        const geom=g.geometry; if(!geom) continue;
+        const x = geom.longitude ?? geom.x, y = geom.latitude ?? geom.y;
+        if(typeof x!=='number' || typeof y!=='number') continue;
+        if(x<xmin) xmin=x; if(y<ymin) ymin=y; if(x>xmax) xmax=x; if(y>ymax) ymax=y;
+      }
+      if(!isFinite(xmin)||!isFinite(ymin)||!isFinite(xmax)||!isFinite(ymax)) return;
+      const ext = new Extent({ xmin, ymin, xmax, ymax, spatialReference:{ wkid:4326 } });
+      view.goTo({ target:ext, padding }).catch(()=>{});
+    }
+
+    /* ====== Nearest (punti acqua) ====== */
+    function buildSpatialGrid(points, gridSize=0.5){
+      spatialGrid={};
+      for(const p of points){
+        const lon=p.geometry.longitude, lat=p.geometry.latitude;
+        const gx=Math.floor(lon/gridSize), gy=Math.floor(lat/gridSize);
+        const key=`${gx},${gy}`; if(!spatialGrid[key]) spatialGrid[key]=[];
+        spatialGrid[key].push(p);
+      }
+    }
+    function haversineMeters(a,b){
+      const R=6371000, toRad=d=>d*Math.PI/180;
+      const dLat=toRad(b.latitude-a.latitude), dLon=toRad(b.longitude-a.longitude);
+      const lat1=toRad(a.latitude), lat2=toRad(b.latitude);
+      const s=Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+      return Math.round(2*R*Math.asin(Math.sqrt(s)));
+    }
+    function findNearest(pt){
+      if(!allPoints.length || !pt) return;
+      linesLayer.removeAll();
+      if(Object.keys(spatialGrid).length===0) buildSpatialGrid(allPoints);
+
+      const active = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : allPoints;
+      const gridSize=0.5, gx=Math.floor(pt.longitude/gridSize), gy=Math.floor(pt.latitude/gridSize);
+      let candidates=[];
+      for(let x=gx-2; x<=gx+2; x++){
+        for(let y=gy-2; y<=gy+2; y++){
+          const key=`${x},${y}`; const cell=spatialGrid[key]; if(!cell) continue;
+          for(const g of cell) if(active.includes(g)){
+            candidates.push({ feature:g, distance:haversineMeters(pt, g.geometry) });
+          }
+        }
+      }
+      if(candidates.length<4) candidates = active.map(g=>({ feature:g, distance:haversineMeters(pt, g.geometry) }));
+      nearest = candidates.filter(o=> o.distance<=10000).sort((a,b)=>a.distance-b.distance).slice(0,4);
+      for(const item of nearest){
+        const line=new Polyline({ paths:[[pt.longitude,pt.latitude],[item.feature.geometry.longitude,item.feature.geometry.latitude]], spatialReference:{ wkid:4326 } });
+        linesLayer.add(new Graphic({ geometry:line, symbol:symLine }));
+      }
+      renderInfo();
+    }
+    function renderInfo(){
+      let html="<h4 style='margin:4px 0 6px'>Pontos de água mais próximos <small>(até 10 km)</small>:</h4>";
+      if(!nearest.length){ html+="<p style='margin:0'>Nenhum ponto encontrado.</p>"; }
+      else {
+        html+="<ul style='margin:0; padding-left:16px; font-size:12px;'>";
+        for(const o of nearest){
+          const a=o.feature.attributes||{}; const name=a.nomenome||a.nome||"Sem nome";
+          const type=a.tipologia?(" ("+a.tipologia+")"):"";
+          html+="<li>"+name+type+" — "+o.distance+" m</li>";
+        }
+        html+="</ul>";
+      }
+      infoContent.innerHTML=html;
+    }
+
+    // aggiorna "nearest" con interazioni basilari
+    view.on("pointer-move", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    view.on("pointer-down", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
+    view.when(()=>{ if(view.center) findNearest(view.center); });
+
+    /* ====== GPS ====== */
+    btnGPS.addEventListener("click", ()=>{
+      if(!navigator.geolocation) return showError("Geolocalização não suportada.");
+      navigator.geolocation.getCurrentPosition(
+        p=>{
+          const pt = new Point({ longitude:p.coords.longitude, latitude:p.coords.latitude });
+          view.goTo({ target:pt, zoom:14 }).catch(()=>{});
+          locLayer.removeAll();
+          locLayer.add(new Graphic({ geometry:pt, symbol:symLocation }));
+          showToast("Localização definida");
+          findNearest(pt);
+        },
+        ()=> showError("Não foi possível obter a localização."),
+        { enableHighAccuracy:true, maximumAge:30000, timeout:10000 }
+      );
+    });
+
+    /* ====== VIIRS (GeoJSON via fetch senza credenziali; "tutto" senza filtri) ====== */
+    const VIIRS_QUERY_BASE =
+      "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
+
+    function viirsGeoJsonUrl(){
+      const qs = new URLSearchParams({
+        where: "1=1",     // carichiamo tutto (niente selettori data)
+        outFields: "*",
+        outSR: "4326",
+        f: "geojson"
+      }).toString();
+      return `${VIIRS_QUERY_BASE}?${qs}`;
+    }
+
+    async function loadVIIRSAll(){
+      try{
+        const res = await fetch(viirsGeoJsonUrl(), {
+          method: "GET",
+          mode: "cors",
+          credentials: "omit",  // evita CORS con A-C-A-O: *
+          cache: "no-store"
+        });
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const gj = await res.json();
+        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON non valido");
+        drawVIIRS(gj.features);
+        showToast("Incêndios VIIRS: ON");
+      } catch(err){
+        console.error("VIIRS fetch error:", err);
+        showError("Falha ao carregar dados de incêndios (VIIRS).");
+        clearVIIRS();
+        btnFire.setAttribute("aria-pressed","false");
+      }
+    }
+
+    function drawVIIRS(features){
+      viirsLayer.removeAll();
+      for(const f of features){
+        const c = f.geometry && f.geometry.coordinates;
+        if(!c) continue;
+        viirsLayer.add(new Graphic({
+          geometry: { type:"point", longitude:+c[0], latitude:+c[1] },
+          attributes: f.properties || {},
+          symbol: symFire,
+          popupTemplate: null
+        }));
+      }
+    }
+    function clearVIIRS(){ viirsLayer.removeAll(); }
+
+    // Toggle fiamma
+    btnFire.addEventListener("click", ()=>{
+      const on = btnFire.getAttribute("aria-pressed")==="true";
+      if(on){
+        btnFire.setAttribute("aria-pressed","false");
+        clearVIIRS();
+        showToast("Incêndios VIIRS: OFF");
+      } else {
+        btnFire.setAttribute("aria-pressed","true");
+        loadVIIRSAll(); // carica tutto (nessun selettore date)
+      }
+    });
+
+  });
+  </script>
+</body>
+</html>
