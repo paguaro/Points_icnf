@@ -56,6 +56,7 @@
   /* Loader iniziale */
   #loadingMessage { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:7; }
   #loadingBox { background:#fff; padding:12px 14px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
+  .hidden { display: none !important; }
 
   /* Stile per nascondere le icone Esri originali */
   .esri-popup__button .esri-icon {
@@ -78,7 +79,7 @@
     <div id="infoContent"></div>
   </div>
 
-  <!-- Pannello filtro (ricerca punti d'acqua) -->
+  <!-- Pannello filtro (ricerca pontos d'água) -->
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
     <strong class="panel-title">Filtrar</strong>
@@ -146,6 +147,7 @@
     const uniqueDistritos = new Set();
     let spatialGrid = {};      // accelerazione per nearest
     let nearest = [];          // lista punti vicini correnti
+    let isVIIRSLoading = false; // per evitare richieste multiple VIIRS
 
     /* ====== Simboli ====== */
     const symWater = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[80,220,255], width:1 }, size:5 });
@@ -172,7 +174,7 @@
     toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
     toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
 
-    /* ====== Caricamento punti acqua (ICNF WFS) ====== */
+    /* ====== Caricamento pontos de água (ICNF WFS) ====== */
     const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
     esriRequest(wfsUrl, { responseType:"json" })
@@ -183,7 +185,7 @@
       .catch(e=> { console.warn(e); showError("Falha ao carregar pontos de água."); })
       .finally(()=> loadingMsg.classList.add("hidden"));
 
-    // Template popup unificato con icone personalizzate per punti acqua
+    // Template popup unificato con icone personalizzate per pontos de água
     function createWaterPopupTemplate(attrs) {
       return {
         title: attrs.nome || attrs.tipologia || "Ponto de água",
@@ -425,7 +427,7 @@
       view.goTo({ target:ext, padding }).catch(()=>{});
     }
 
-    /* ====== Nearest (punti acqua) ====== */
+    /* ====== Nearest (pontos de água) ====== */
     function buildSpatialGrid(points, gridSize=0.5){
       spatialGrid={};
       for(const p of points){
@@ -481,11 +483,19 @@
       infoContent.innerHTML=html;
     }
 
-    // aggiorna "nearest" con interazioni basilari
-    view.on("pointer-move", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
-    view.on("pointer-down", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    // Atualiza "nearest" com interações básicas
     view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
     view.when(()=>{ if(view.center) findNearest(view.center); });
+
+    // Adiciona um listener para atualizar apenas quando o movimento do mouse terminar
+    let moveTimeout;
+    view.on("pointer-move", (e)=>{
+      clearTimeout(moveTimeout);
+      moveTimeout = setTimeout(() => {
+        const pt = view.toMap({x: e.x, y: e.y});
+        if(pt) findNearest(pt);
+      }, 100);
+    });
 
     /* ====== GPS ====== */
     btnGPS.addEventListener("click", ()=>{
@@ -519,6 +529,9 @@
     }
 
     async function loadVIIRSAll(){
+      if (isVIIRSLoading) return;
+      
+      isVIIRSLoading = true;
       try{
         const res = await fetch(viirsGeoJsonUrl(), {
           method: "GET",
@@ -528,7 +541,7 @@
         });
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const gj = await res.json();
-        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON non valido");
+        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON não válido");
         drawVIIRS(gj.features);
         showToast("Incêndios VIIRS: ON");
       } catch(err){
@@ -536,6 +549,8 @@
         showError("Falha ao carregar dados de incêndios (VIIRS).");
         clearVIIRS();
         btnFire.setAttribute("aria-pressed","false");
+      } finally {
+        isVIIRSLoading = false;
       }
     }
 
