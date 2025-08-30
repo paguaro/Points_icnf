@@ -203,20 +203,16 @@
         },
         actions: [{
           title: "Waze",
-          id: "open-waze",
-          image: "waze-icon.png"
+          id: "open-waze"
         }, {
           title: "Google Maps", 
-          id: "open-google-maps",
-          image: "google-maps-icon.png"
+          id: "open-google-maps"
         }, {
           title: "Copiar Coordenadas",
-          id: "copy-coords",
-          image: "coordinates-icon.png"
+          id: "copy-coords"
         }, {
           title: "Copiar GeoJSON",
-          id: "copy-geojson",
-          image: "geojson-icon.png"
+          id: "copy-geojson"
         }]
       };
     }
@@ -227,7 +223,7 @@
       const hoursOld = attrs["Hours Old"] || attrs.hours_old || "N/A";
       
       return {
-        title: `VIIRS FRP: ${frp} | Hours Old: ${hoursOld}`,
+        title: `VIIRS FRP: ${frp} MW | Hours Old: ${hoursOld}`,
         content: function(event) {
           const graphic = event.graphic;
           const attrs = graphic.attributes || {};
@@ -251,7 +247,9 @@
                           attrs[field.replace(/\s+/g, '')] || "N/A";
             
             if (value !== "N/A") {
-              content += `<tr><th>${field}</th><td>${value}</td></tr>`;
+              // Aggiungi unità di misura per FRP
+              const displayValue = field === "Frp" || field === "frp" ? `${value} MW` : value;
+              content += `<tr><th>${field}</th><td>${displayValue}</td></tr>`;
             }
           }
           
@@ -262,16 +260,16 @@
         },
         actions: [{
           title: "Waze",
-          id: "open-waze",
-          image: "waze-icon.png"
+          id: "open-waze"
         }, {
           title: "Google Maps", 
-          id: "open-google-maps",
-          image: "google-maps-icon.png"
+          id: "open-google-maps"
         }, {
           title: "Copiar Coordenadas",
-          id: "copy-coords",
-          image: "coordinates-icon.png"
+          id: "copy-coords"
+        }, {
+          title: "Copiar GeoJSON",
+          id: "copy-geojson"
         }]
       };
     }
@@ -532,17 +530,20 @@
       if (isVIIRSLoading) return;
       
       isVIIRSLoading = true;
+      showToast("A carregar dados VIIRS...");
+      
       try{
-        const res = await fetch(viirsGeoJsonUrl(), {
-          method: "GET",
-          mode: "cors",
-          credentials: "omit",  // evita CORS con A-C-A-O: *
-          cache: "no-store"
+        // Usando esriRequest invece di fetch per evitare problemi CORS
+        const response = await esriRequest(viirsGeoJsonUrl(), {
+          responseType: "json",
+          query: {}
         });
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const gj = await res.json();
-        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON não válido");
-        drawVIIRS(gj.features);
+        
+        if(!response.data || !Array.isArray(response.data.features)) {
+          throw new Error("Dados VIIRS não válidos");
+        }
+        
+        drawVIIRS(response.data.features);
         showToast("Incêndios VIIRS: ON");
       } catch(err){
         console.error("VIIRS fetch error:", err);
@@ -559,15 +560,32 @@
       for(const f of features){
         const c = f.geometry && f.geometry.coordinates;
         if(!c) continue;
+        
+        // Preparazione attributi per il popup
+        const attributes = {
+          ...f.properties,
+          // Aggiungi campi standardizzati
+          Frp: f.properties.Frp || f.properties.frp,
+          "Hours Old": f.properties["Hours Old"] || f.properties.hours_old,
+          "Acq Date": f.properties["Acq Date"] || f.properties.acq_date,
+          "Acq Time": f.properties["Acq Time"] || f.properties.acq_time,
+          Confidence: f.properties.Confidence || f.properties.confidence,
+          Satellite: f.properties.Satellite || f.properties.satellite,
+          Version: f.properties.Version || f.properties.version
+        };
+        
         viirsLayer.add(new Graphic({
-          geometry: { type:"point", longitude:+c[0], latitude:+c[1] },
-          attributes: f.properties || {},
+          geometry: new Point({ longitude: +c[0], latitude: +c[1] }),
+          attributes: attributes,
           symbol: symFire,
-          popupTemplate: createVIIRSPopupTemplate(f.properties || {})
+          popupTemplate: createVIIRSPopupTemplate(attributes)
         }));
       }
     }
-    function clearVIIRS(){ viirsLayer.removeAll(); }
+    
+    function clearVIIRS(){ 
+      viirsLayer.removeAll(); 
+    }
 
     // Toggle fiamma
     btnFire.addEventListener("click", ()=>{
