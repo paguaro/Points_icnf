@@ -9,9 +9,10 @@
   html, body, #viewDiv { height:100%; width:100%; margin:0; padding:0; -webkit-text-size-adjust:100%; }
   .esri-ui .esri-widget, .esri-ui button, .esri-ui input, .esri-ui select { font-size:12px; line-height:1.2; }
 
-  /* Icone GPS + FUOCO — POSIZIONE ORIGINALE (non toccare) */
-  .iconbar { position:absolute; top:50px; right:10px; z-index:1000; display:flex; gap:6px; align-items:center; }
-  .iconbtn { background:transparent; border:none; cursor:pointer; padding:6px; min-width:36px; font-size:30px; line-height:1.2; border-radius:8px; }
+  /* Barra icone (GPS + FUOCO) in alto a destra */
+  .iconbar { position:absolute; top:15px; right:10px; z-index:6; display:flex; gap:6px; align-items:center; }
+  .iconbtn { background:transparent; border:none; cursor:pointer; padding:6px; min-width:32px; font-size:20px; line-height:1; border-radius:8px; }
+  /* FUOCO "nudo": OFF=grigio, ON=colore naturale */
   #btnFire { filter:grayscale(1) brightness(.8); transition:filter .15s ease, transform .08s ease; }
   #btnFire[aria-pressed="true"] { filter:none; }
   .iconbtn:active { transform:scale(.96); }
@@ -19,19 +20,26 @@
   /* Pannelli */
   #infoPanel, #filterPanel {
     position:absolute; background:#fff; padding:6px 8px; border-radius:8px;
-    box-shadow:0 2px 10px rgba(0,0,0,.15); font-size:9px; z-index:5; max-height:50%;
-    overflow-y:auto;
+    box-shadow:0 2px 10px rgba(0,0,0,.15); font-size:9px; z-index:5;
+    overflow-y:auto; transition: all 0.3s ease;
   }
-  #infoPanel { top:110px; right:10px; width:min(260px,42vw); }
-  #filterPanel { bottom:130px; left:10px; width:min(200px,40vw); }
+  #infoPanel { top:100px; right:10px; width:min(260px,42vw); max-height:50%; opacity:0.9; }
+  #infoPanel.collapsed { max-height:24px; opacity:0.4; padding: 4px; }
+  #filterPanel { bottom:120px; left:10px; width:min(180px,32vw); max-height:50%; opacity:0.9; }
+  #filterPanel.collapsed { max-height:24px; opacity:0.4; padding: 4px; }
+  
+  /* Nascondi il contenuto quando è minimizzato */
+  #infoPanel.collapsed #infoContent { display:none; }
+  #filterPanel.collapsed .filter-content { display:none; }
 
   .toggle-chip {
     position:absolute; top:4px; left:4px; background:#f2f2f2; border:1px solid #ddd;
     cursor:pointer; border-radius:6px; padding:2px 6px; font-size:14px; line-height:1.1; user-select:none;
+    z-index: 10;
   }
   .panel-title { display:block; margin-left:22px; margin-bottom:4px; font-size:9px; font-weight:600; }
 
-  select, button { width:100%; padding:8px 10px; margin:4px 0; box-sizing:border-box; font-size:12px; border-radius:8px; }
+  select, button { width:100%; padding:6px 8px; margin:2px 0; box-sizing:border-box; font-size:12px; border-radius:6px; }
   button { background-color:#0079c1; color:#fff; border:none; cursor:pointer; }
   button:hover { background-color:#005a8c; }
   .btn-ghost { background:#fff; color:#000; border:1px solid #ccc; }
@@ -40,48 +48,146 @@
   .info-table th, .info-table td { text-align:left; padding:2px 4px; border-bottom:1px dotted #eee; vertical-align:top; word-break:break-word; }
   .info-table th { width:40%; color:#444; font-weight:600; }
 
-  /* Toast + Error + Loader */
+  /* Toast */
   #toast {
     position:absolute; top:10px; left:50%; transform:translateX(-50%);
     background:#323232; color:#fff; padding:8px 12px; border-radius:6px;
     z-index:10; display:none; font-size:13px; box-shadow:0 3px 10px rgba(0,0,0,.2);
   }
+  /* Messaggio errore */
   #error {
     position:absolute; top:50px; left:50%; transform:translateX(-50%);
     background:#d32f2f; color:#fff; padding:8px 12px; border-radius:6px;
     z-index:10; display:none; font-size:13px; box-shadow:0 3px 10px rgba(0,0,0,.2);
   }
+  /* Loader iniziale */
   #loadingMessage { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; z-index:7; }
   #loadingBox { background:#fff; padding:12px 14px; border-radius:10px; box-shadow:0 4px 16px rgba(0,0,0,.2); font-size:14px; }
   .hidden { display:none !important; }
+  
+  /* Legenda personalizzata */
+  .custom-legend {
+    background: white;
+    padding: 8px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    max-height: 250px;
+    overflow-y: auto;
+    font-size: 11px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 6px;
+    padding: 2px;
+  }
+  .legend-color {
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    border-radius: 50%;
+  }
+  .line-color {
+    width: 14px;
+    height: 3px;
+    margin-right: 6px;
+    background-color: rgba(255,0,0,0.6);
+  }
+  .legend-label {
+    flex: 1;
+    font-size: 11px;
+  }
+  .legend-checkbox {
+    margin-left: 6px;
+    transform: scale(0.8);
+  }
+  
+  /* Scala dinamica */
+  #scaleBar {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.8);
+    padding: 2px 5px;
+    border-radius: 2px;
+    font-size: 8px;
+    z-index: 5;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    color: #ff0000;
+    font-weight: bold;
+  }
+  
+  /* Stile per nascondere le icone Esri originali */
+  .esri-popup__button .esri-icon {
+    display: none !important;
+  }
+  
+  /* Centrare il toggle chip quando il pannello è collassato */
+  #infoPanel.collapsed .toggle-chip, 
+  #filterPanel.collapsed .toggle-chip {
+    left: 50%;
+    transform: translateX(-50%);
+    top: 2px;
+  }
+  
+  /* Indicatore di caricamento VIIRS */
+  .fire-loading {
+    animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse {
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
+  }
+  
+  /* Pulsante reset mappa */
+  .reset-map-btn {
+    padding: 6px;
+    font-size: 16px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  /* Nascondere il widget zoom predefinito di ArcGIS */
+  .esri-ui-corner .esri-component.esri-widget--panel.esri-interactive {
+    display: none !important;
+  }
 </style>
 </head>
 <body>
   <div id="viewDiv"></div>
 
-  <!-- Icone: GPS + FUOCO (posizione invariata) -->
+  <!-- Barra icone: GPS + FUOCO -->
   <div class="iconbar">
     <button id="btnGPS" class="iconbtn" title="Localizar-me">📍</button>
     <button id="btnFire" class="iconbtn" title="Incêndios (VIIRS)" aria-pressed="false">🔥</button>
   </div>
 
-  <!-- Pannello info “punti vicini” -->
-  <div id="infoPanel" aria-live="polite">
+  <!-- Pannello info "ponti vicini" -->
+  <div id="infoPanel">
     <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
     <div id="infoContent"></div>
   </div>
 
-  <!-- Pannello filtro (ricerca punti d'acqua) -->
+  <!-- Pannello filtro (ricerca pontos d'água) -->
   <div id="filterPanel">
     <button id="toggleFilter" class="toggle-chip" title="Minimizar / Expandir">⚙️</button>
-    <strong class="panel-title">Filtrar</strong>
-    <select id="distritoFilter" aria-label="Filtrar por distrito"><option value="">Todos os distritos</option></select>
-    <select id="concelhoFilter" aria-label="Filtrar por concelho"><option value="">Todos os concelhos</option></select>
-    <div style="display:flex; gap:6px; margin-top:4px;">
-      <button id="applyFilter" style="flex:1;">Aplicar</button>
-      <button id="resetFilter" class="btn-ghost" style="flex:1;">Repor</button>
+    <div class="filter-content">
+      <strong class="panel-title">Filtrar</strong>
+      <select id="distritoFilter" aria-label="Filtrar por distrito"><option value="">Todos os distritos</option></select>
+      <select id="concelhoFilter" aria-label="Filtrar por concelho"><option value="">Todos os concelhos</option></select>
+      <div style="display:flex; gap:4px; margin-top:4px;">
+        <button id="applyFilter" style="flex:1;">Aplicar</button>
+        <button id="resetFilter" class="btn-ghost" style="flex:1;">Repor</button>
+      </div>
     </div>
   </div>
+
+  <!-- Scala dinamica -->
+  <div id="scaleBar"></div>
 
   <!-- Toast + Error + Loader -->
   <div id="toast"></div>
@@ -96,50 +202,112 @@
     "esri/geometry/Point","esri/geometry/Polyline","esri/geometry/Extent",
     "esri/symbols/SimpleMarkerSymbol","esri/symbols/SimpleLineSymbol",
     "esri/widgets/Search","esri/widgets/BasemapGallery","esri/widgets/Expand",
-    "esri/request"
+    "esri/widgets/Zoom", "esri/widgets/Home",
+    "esri/request", "esri/core/reactiveUtils"
   ], function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,Extent,
-              SimpleMarkerSymbol,SimpleLineSymbol,Search,BasemapGallery,Expand,esriRequest){
+              SimpleMarkerSymbol,SimpleLineSymbol,Search,BasemapGallery,Expand,
+              Zoom, Home, esriRequest, reactiveUtils){
 
     /* ====== MAPPA & UI BASE ====== */
     const map = new Map({ basemap: "streets-navigation-vector" });
-    const view = new MapView({ container:"viewDiv", map, center:[-8,39.5], zoom:7, popupEnabled:true });
+    
+    // Disabilita il widget zoom predefinito
+    const view = new MapView({ 
+      container: "viewDiv", 
+      map, 
+      center: [-8,39.5], 
+      zoom: 7, 
+      popupEnabled: true,
+      ui: {
+        components: ["attribution"] // Mostra solo l'attribuzione, non lo zoom
+      }
+    });
 
-    // Add icon bar to ArcGIS UI in the top-right, at index 0 (above others)
-const iconbarNode = document.getElementById('iconbar');
-view.ui.add(iconbarNode, { position: 'top-right', index: 0 });
-
-// Create Search and wrap it in an Expand so it collapses to a lens icon
-const searchWidget = new Search({ view });
-const searchExpand = new Expand({
-  view,
-  content: searchWidget,     // Search inside the collapsible panel
-  expanded: false,           // start collapsed (only the lens)
-  expandIcon: "search",      // lens icon
-  expandTooltip: "Procura"
-});
-// Put Search (in Expand) below the icons
-view.ui.add(searchExpand, { position: 'top-left', index: 1 });
-
-    const basemapGallery = new BasemapGallery({ view: view });
-        const bgExpand = new Expand({
-          view: view,
-          content: basemapGallery,
-          expandIconClass: "esri-icon-basemap",
-          expandTooltip: "Mudar mapa base"
-        });
-        view.ui.add(bgExpand, "bottom-right");
-        // Auto-close basemap after selection
-        basemapGallery.watch("activeBasemap", () => { bgExpand.expanded = false; });
-
+    // Salva l'estensione iniziale per il reset
+    let initialExtent = null;
+    view.when(() => {
+      initialExtent = view.extent.clone();
+    });
 
     /* ====== LAYERS ====== */
-    const waterLayer = new GraphicsLayer(); map.add(waterLayer);
-    const filteredPointsLayer = new GraphicsLayer(); map.add(filteredPointsLayer);
-    const linesLayer = new GraphicsLayer(); map.add(linesLayer);
-    const locLayer = new GraphicsLayer(); map.add(locLayer);
-    const viirsLayer = new GraphicsLayer(); viirsLayer.opacity = 1; map.add(viirsLayer);
+    const waterLayer = new GraphicsLayer({ 
+      title: "Pontos de Água",
+      listMode: "show"
+    }); 
+    map.add(waterLayer);
+    
+    const filteredPointsLayer = new GraphicsLayer({ 
+      title: "Pontos Filtrados",
+      listMode: "show"
+    }); 
+    map.add(filteredPointsLayer);
+    
+    const linesLayer = new GraphicsLayer({ 
+      title: "Linhas de Conexão",
+      listMode: "show"
+    }); 
+    map.add(linesLayer);
+    
+    const locLayer = new GraphicsLayer({ 
+      title: "Minha Localização",
+      listMode: "show"
+    }); 
+    map.add(locLayer);
+    
+    const viirsLayer = new GraphicsLayer({ 
+      title: "Incêndios VIIRS",
+      listMode: "show"
+    }); 
+    map.add(viirsLayer);
 
-    /* ====== UI ====== */
+    /* ====== WIDGETS A SINISTRA ====== */
+    
+    // 1. Zoom widget (solo uno, in alto a sinistra)
+    const zoomWidget = new Zoom({ view: view });
+    view.ui.add(zoomWidget, { position: "top-left", index: 0 });
+    
+    // 2. Home widget per tornare all'estensione iniziale
+    const homeWidget = new Home({ view: view });
+    view.ui.add(homeWidget, { position: "top-left", index: 1 });
+    
+    // 3. Legenda personalizzata
+    const legendContainer = document.createElement("div");
+    legendContainer.className = "custom-legend";
+    legendContainer.innerHTML = '<h4 style="margin:0 0 8px 0; font-size:12px;">Legenda</h4>';
+    
+    const legendExpand = new Expand({
+      view: view,
+      content: legendContainer,
+      expanded: false,
+      expandIconClass: "esri-icon-layer-list", // Icona corretta per legenda
+      expandTooltip: "Legenda"
+    });
+    view.ui.add(legendExpand, { position: "top-left", index: 2 });
+    
+    // 4. Search widget
+    const searchWidget = new Search({ view: view });
+    const searchExpand = new Expand({
+      view: view,
+      content: searchWidget,
+      expanded: false,
+      expandIcon: "search",
+      expandTooltip: "Pesquisar localização"
+    });
+    view.ui.add(searchExpand, { position: "top-left", index: 3 });
+    
+    // 5. Basemap gallery widget (in basso a destra)
+    const basemapGallery = new BasemapGallery({ view: view });
+    const bgExpand = new Expand({
+      view: view,
+      content: basemapGallery,
+      expandIconClass: "esri-icon-basemap",
+      expandTooltip: "Mudar mapa base"
+    });
+    view.ui.add(bgExpand, "bottom-right");
+    // Auto-close basemap after selection
+    basemapGallery.watch("activeBasemap", () => { bgExpand.expanded = false; });
+
+    /* ====== UI elementi ====== */
     const btnGPS = document.getElementById("btnGPS");
     const btnFire = document.getElementById("btnFire");
     const infoPanel = document.getElementById("infoPanel");
@@ -154,35 +322,24 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
     const toast = document.getElementById("toast");
     const errorBox = document.getElementById("error");
     const loadingMsg = document.getElementById("loadingMessage");
+    const scaleBar = document.getElementById("scaleBar");
 
     /* ====== Stato ====== */
-    const allPoints = [];
-    const distritoConcelho = {};
+    const allPoints = [];      // Graphics dei punti acqua
+    const distritoConcelho = {};// mapa distrito -> Set(concelhos)
     const uniqueDistritos = new Set();
-    let spatialGrid = {};
-    let nearest = [];
+    let spatialGrid = {};      // accelerazione per nearest
+    let nearest = [];          // lista punti vicini correnti
+    let isVIIRSLoading = false; // per evitare richieste multiple VIIRS
 
     /* ====== Simboli ====== */
-    const symWater    = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[80,220,255], width:0.5 }, size:5 });
-    const symFiltered = new SimpleMarkerSymbol({ color:[0,0,19,50], outline:{ color:[0,234,255], width:2 }, size:4.5 });
-    const symLocation = new SimpleMarkerSymbol({ color:[255,255,255,1], outline:{ color:[70,255,0,10], width:3 }, size:3 });
-    const symLine     = new SimpleLineSymbol({ color:[255,25,0,200], width:1.7, style:"short-dash" });
+    const symWater = new SimpleMarkerSymbol({ color:[0,112,255,0.9], outline:{ color:[80,220,255], width:1 }, size:5 });
+    const symFiltered = new SimpleMarkerSymbol({ color:[0,112,255,0.85], outline:{ color:[255,230,120], width:1 }, size:6 });
+    const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9], outline:{ color:[255,255,255], width:2 }, size:10 });
+    const symLine = new SimpleLineSymbol({ color:[255,0,0,0.7], width:1.5, style:"short-dash" });
+    const symFire = new SimpleMarkerSymbol({ color:[255,64,0,0.9], outline:null, size:6 });
 
     /* ====== Util ====== */
-
-
-// Left group: reset extent under zoom
-        const leftGroup = document.createElement("div");
-        leftGroup.className = "custom-ui";
-        const resetExtentBtn = document.createElement("button");
-        resetExtentBtn.innerHTML = "↺";
-        resetExtentBtn.title = "Repor extensão inicial";
-        resetExtentBtn.className = "btn-ghost";
-        resetExtentBtn.addEventListener("click", () => view.goTo({ center: [-8, 39.5], zoom: 7 }));
-        leftGroup.appendChild(resetExtentBtn);
-        view.ui.add(leftGroup, { position: "top-left", index: 1 });
-
-
     function showToast(msg, ms=2000){
       toast.textContent = msg; toast.style.display = "block";
       clearTimeout(showToast._t); showToast._t = setTimeout(()=> toast.style.display = "none", ms);
@@ -191,26 +348,229 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
       errorBox.textContent = msg; errorBox.style.display = "block";
       clearTimeout(showError._t); showError._t = setTimeout(()=> errorBox.style.display = "none", ms);
     }
-    function hideLoader(){ loadingMsg.classList.add("hidden"); }
 
     function togglePanel(panel, btn){
-      const collapsed = panel.dataset.state==="collapsed";
-      if(collapsed){ panel.dataset.state="expanded"; panel.style.maxHeight="50%"; btn.textContent = (btn.id==="toggleInfo" ? "📋" : "⚙️"); }
-      else { panel.dataset.state="collapsed"; panel.style.maxHeight="24px"; btn.textContent="▶"; }
+      const isFilterPanel = panel.id === "filterPanel";
+      const isInfoPanel = panel.id === "infoPanel";
+      const collapsed = panel.classList.contains("collapsed");
+      
+      if(collapsed){ 
+        panel.classList.remove("collapsed");
+        if (isFilterPanel) {
+          btn.textContent = "⚙️";
+        } else if (isInfoPanel) {
+          btn.textContent = "📋";
+        }
+      } else { 
+        panel.classList.add("collapsed");
+        if (isFilterPanel) {
+          btn.textContent = "▶";
+        } else if (isInfoPanel) {
+          btn.textContent = "▶";
+        }
+      }
     }
+    
     toggleInfo.addEventListener("click", ()=> togglePanel(infoPanel, toggleInfo));
     toggleFilter.addEventListener("click", ()=> togglePanel(filterPanel, toggleFilter));
 
-    /* ====== Caricamento punti acqua (ICNF WFS) ====== */
+    // Funzione per aggiornare la legenda
+    function updateLegend() {
+      // Pulisci la legenda
+      while (legendContainer.children.length > 1) {
+        legendContainer.removeChild(legendContainer.lastChild);
+      }
+      
+      // Aggiungi i layer alla legenda
+      map.layers.forEach(layer => {
+        if (layer.title && layer.listMode === "show") {
+          const item = document.createElement("div");
+          item.className = "legend-item";
+          
+          // Crea il colore del simbolo
+          const colorBox = document.createElement("div");
+          
+          // Determina il colore in base al tipo de layer
+          if (layer.title === "Pontos de Água") {
+            colorBox.className = "legend-color";
+            colorBox.style.backgroundColor = "rgba(0,112,255,0.85)";
+          } else if (layer.title === "Pontos Filtrados") {
+            colorBox.className = "legend-color";
+            colorBox.style.backgroundColor = "rgba(2,64,64,0.9)";
+          } else if (layer.title === "Linhas de Conexão") {
+            colorBox.className = "line-color";
+          } else if (layer.title === "Minha Localização") {
+            colorBox.className = "legend-color";
+            colorBox.style.backgroundColor = "rgba(0,200,0,0.9)";
+          } else if (layer.title === "Incêndios VIIRS") {
+            colorBox.className = "legend-color";
+            colorBox.style.backgroundColor = "rgba(255,64,0,0.9)";
+          }
+          
+          // Crea l'etichetta
+          const label = document.createElement("span");
+          label.className = "legend-label";
+          label.textContent = layer.title;
+          
+          // Crea la checkbox
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.className = "legend-checkbox";
+          checkbox.checked = layer.visible;
+          checkbox.addEventListener("change", () => {
+            layer.visible = checkbox.checked;
+          });
+          
+          item.appendChild(colorBox);
+          item.appendChild(label);
+          item.appendChild(checkbox);
+          legendContainer.appendChild(item);
+        }
+      });
+    }
+    
+    // Aggiorna la legenda quando i layer cambiano
+    map.layers.on("change", updateLegend);
+    
+    // Funzione per aggiornare la barra della scala
+    function updateScaleBar() {
+      const scale = view.scale;
+      let distance, unit;
+      
+      if (scale > 1000000) {
+        distance = Math.round(scale / 100000) * 100;
+        unit = "km";
+        distance = distance / 100;
+      } else if (scale > 1000) {
+        distance = Math.round(scale / 100) * 100;
+        unit = "m";
+      } else {
+        distance = Math.round(scale);
+        unit = "m";
+      }
+      
+      // Mostra solo i metri in rosso con separatore delle migliaia
+      if (unit === "m") {
+        scaleBar.textContent = `${distance.toLocaleString('pt-PT')} m`;
+      } else {
+        scaleBar.textContent = `${distance} ${unit}`;
+      }
+    }
+    
+    // Aggiorna la barra della scala quando la vista cambia
+    view.watch("scale", updateScaleBar);
+    view.watch("center", updateScaleBar);
+
+    /* ====== Caricamento pontos de água (ICNF WFS) ====== */
     const wfsUrl = "https://si.icnf.pt/wfs/pontos_agua?service=WFS&version=2.0.0&request=GetFeature&typeNames=pontos_agua&outputFormat=application/json&srsName=EPSG:4326";
 
     esriRequest(wfsUrl, { responseType:"json" })
       .then(r=>{
         const gj=r.data; if(!gj?.features) throw new Error("GeoJSON vazio.");
         ingestWater(gj.features);
-        hideLoader();
+        // Aggiorna la legenda dopo il caricamento
+        updateLegend();
+        updateScaleBar();
       })
-      .catch(e=> { console.warn(e); showError("Falha ao carregar pontos de água."); hideLoader(); });
+      .catch(e=> { console.warn(e); showError("Falha ao carregar pontos de água."); })
+      .finally(()=> loadingMsg.classList.add("hidden"));
+
+    // Template popup unificato con icone personalizzate per pontos de água
+    function createWaterPopupTemplate(attrs) {
+      return {
+        title: attrs.nome || attrs.tipologia || "Ponto de água",
+        content: function(event) {
+          const graphic = event.graphic;
+          const attrs = graphic.attributes || {};
+          const geom = graphic.geometry;
+          const lat = Number(geom.latitude).toFixed(6);
+          const lon = Number(geom.longitude).toFixed(6);
+          
+          return buildTable(attrs) +
+            "<div style='margin-top:8px;'>" +
+            "<strong>Coordenadas:</strong> " + lat + ", " + lon +
+            "</div>";
+        },
+        actions: [{
+          title: "Waze",
+          id: "open-waze",
+          image: "https://paguaro.github.io/Points_icnf/waze-icon.png"
+        }, {
+          title: "Google Maps", 
+          id: "open-google-maps",
+          image: "https://paguaro.github.io/Points_icnf/google-maps-icon.png"
+        }, {
+          title: "Copiar Coordenadas",
+          id: "copy-coords",
+          image: "https://paguaro.github.io/Points_icnf/coordinates-icon.png"
+        }, {
+          title: "Copiar GeoJSON",
+          id: "copy-geojson",
+          image: "https://paguaro.github.io/Points_icnf/geojson-icon.png"
+        }]
+      };
+    }
+
+    // Template popup per punti VIIRS con titolo personalizzato
+    function createVIIRSPopupTemplate(attrs) {
+      const frp = attrs.Frp || attrs.frp || "N/A";
+      const hoursOld = attrs["Hours Old"] || attrs.hours_old || "N/A";
+      
+      return {
+        title: `VIIRS FRP: ${frp} MW | Hours Old: ${hoursOld}`,
+        content: function(event) {
+          const graphic = event.graphic;
+          const attrs = graphic.attributes || {};
+          const geom = graphic.geometry;
+          const lat = Number(geom.latitude).toFixed(6);
+          const lon = Number(geom.longitude).toFixed(6);
+          
+          // Filtra e formatta i campi specifici VIIRS
+          const viirsFields = [
+            "Acq Date", "Acq Time", "Bright Ti4", "Bright Ti5", "Confidence", 
+            "Daynight", "Esritimeutc", "Frp", "Hours Old", "Latitude", "Longitude",
+            "OBJECTID", "Satellite", "Scan", "Track", "Version"
+          ];
+          
+          let content = "<table class='info-table'><tbody>";
+          
+          for (const field of viirsFields) {
+            // Cerca il campo con diversi formati (camelCase, snake_case, ecc.)
+            const value = attrs[field] || attrs[field.toLowerCase()] || 
+                          attrs[field.replace(/\s+/g, '_').toLowerCase()] || 
+                          attrs[field.replace(/\s+/g, '')] || "N/A";
+            
+            if (value !== "N/A") {
+              // Aggiungi unità di misura per FRP
+              const displayValue = field === "Frp" || field === "frp" ? `${value} MW` : value;
+              content += `<tr><th>${field}</th><td>${displayValue}</td></tr>`;
+            }
+          }
+          
+          content += "</tbody></table>";
+          content += "<div style='margin-top:8px;'><strong>Coordenadas:</strong> " + lat + ", " + lon + "</div>";
+          
+          return content;
+        },
+        actions: [{
+          title: "Waze",
+          id: "open-waze",
+          image: "https://paguaro.github.io/Points_icnf/waze-icon.png"
+        }, {
+          title: "Google", 
+          id: "open-google-maps",
+          image: "https://paguaro.github.io/Points_icnf/google-maps-icon.png"
+        }, {
+          title: "Copiar Coordenadas",
+          id: "copy-coords",
+          image: "https://paguaro.github.io/Points_icnf/coordinates-icon.png"
+        }, {
+          title: "Copiar GeoJSON",
+          id: "copy-geojson",
+          image: "https://paguaro.github.io/Points_icnf/geojson-icon.png"
+        }]
+      };
+    }
 
     function ingestWater(features){
       for(const f of features){
@@ -219,21 +579,10 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
         const pt = new Point({ longitude:+c[0], latitude:+c[1] });
         const attrs = f.properties || {};
         const g = new Graphic({
-          geometry:pt, attributes:attrs, symbol:symWater,
-          popupTemplate:{
-            title: attrs.nome || attrs.tipologia || "Ponto de água",
-            content:(ev)=>{
-              const geom=ev.graphic.geometry, a=ev.graphic.attributes||{};
-              const lat = Number(geom.latitude).toFixed(6), lon = Number(geom.longitude).toFixed(6);
-              const wazeUrl  = "https://waze.com/ul?ll="+lat+"%2C"+lon+"&navigate=yes&zoom=17";
-              const gmapsUrl = "https://www.google.com/maps/dir/?api=1&destination="+lat+","+lon;
-              return buildTable(a) +
-                     "<div style='margin-top:8px; display:flex; gap:10px; align-items:center;'>"+
-                     "<a href='"+wazeUrl+"' target='_blank' rel='noopener noreferrer'>Waze</a>"+
-                     "<a href='"+gmapsUrl+"' target='_blank' rel='noopener noreferrer'>Google</a>"+
-                     "</div>";
-            }
-          }
+          geometry:pt, 
+          attributes:attrs, 
+          symbol:symWater,
+          popupTemplate: createWaterPopupTemplate(attrs)
         });
         allPoints.push(g); waterLayer.add(g);
 
@@ -243,7 +592,9 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
         if(!distritoConcelho[d]) distritoConcelho[d] = new Set();
         distritoConcelho[d].add(ccl);
       }
+      // Popola select
       for(const d of Array.from(uniqueDistritos).sort()){ distritoFilter.appendChild(new Option(d,d)); }
+      // Nearest iniziale
       if(view.center) findNearest(view.center);
     }
 
@@ -256,6 +607,76 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
       }
       html += "</tbody></table>";
       return html;
+    }
+
+    // Gestione azioni personalizzate nei popup
+    reactiveUtils.on(
+      () => view.popup,
+      "trigger-action",
+      (event) => {
+        const graphic = view.popup.selectedFeature;
+        if (!graphic) return;
+        
+        const geom = graphic.geometry;
+        const lat = geom.latitude.toFixed(6);
+        const lon = geom.longitude.toFixed(6);
+        const attrs = graphic.attributes;
+        
+        switch(event.action.id) {
+          case "open-waze":
+            openNavigation("waze", lat, lon);
+            break;
+            
+          case "open-google-maps":
+            openNavigation("google", lat, lon);
+            break;
+            
+          case "copy-coords":
+            copyToClipboard(`${lat}, ${lon}`);
+            showToast("Coordenadas copiadas!");
+            break;
+            
+          case "copy-geojson":
+            copyGeoJSON(attrs, lat, lon);
+            break;
+        }
+      }
+    );
+
+    function openNavigation(app, lat, lon) {
+      let url;
+      if (app === "waze") {
+        url = `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`;
+      } else {
+        url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`;
+      }
+      window.open(url, '_blank');
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).catch(err => {
+        console.error("Erro ao copiar para a área de transferência:", err);
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+      });
+    }
+
+    function copyGeoJSON(attributes, lat, lon) {
+      const geoJSON = {
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [parseFloat(lon), parseFloat(lat)]
+        },
+        properties: {...attributes}
+      };
+      
+      copyToClipboard(JSON.stringify(geoJSON, null, 2));
+      showToast("GeoJSON copiado para a área de transferência!");
     }
 
     /* ====== Filtro distritos/concelhos ====== */
@@ -275,7 +696,7 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
           const gg = g.clone(); gg.symbol = symFiltered; filteredPointsLayer.add(gg);
         }
       }
-      const tgt = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : waterLayer.graphics.items;
+      const tgt = filteredPointsLayer.graphics.items.length ? filteredPointsLayer.graphics.items : waterLayer.graphics.items;
       fitToGraphics(tgt, 60);
       if(view.center) findNearest(view.center);
     });
@@ -302,7 +723,7 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
       view.goTo({ target:ext, padding }).catch(()=>{});
     }
 
-    /* ====== Nearest (punti acqua) ====== */
+    /* ====== Nearest (pontos de água) ====== */
     function buildSpatialGrid(points, gridSize=0.5){
       spatialGrid={};
       for(const p of points){
@@ -324,7 +745,7 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
       linesLayer.removeAll();
       if(Object.keys(spatialGrid).length===0) buildSpatialGrid(allPoints);
 
-      const active = filteredPointsLayer.graphics.length ? filteredPointsLayer.graphics.items : allPoints;
+      const active = filteredPointsLayer.graphics.items.length ? filteredPointsLayer.graphics.items : allPoints;
       const gridSize=0.5, gx=Math.floor(pt.longitude/gridSize), gy=Math.floor(pt.latitude/gridSize);
       let candidates=[];
       for(let x=gx-2; x<=gx+2; x++){
@@ -351,18 +772,26 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
         for(const o of nearest){
           const a=o.feature.attributes||{}; const name=a.nomenome||a.nome||"Sem nome";
           const type=a.tipologia?(" ("+a.tipologia+")"):"";
-          html+="<li>"+name+type+" — "+o.distance+" m</li>";
+          html+="<li>"+name+type+" — "+o.distance.toLocaleString('pt-PT')+" m</li>";
         }
         html+="</ul>";
       }
       infoContent.innerHTML=html;
     }
 
-    // Interazioni
-    view.on("pointer-move", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
-    view.on("pointer-down", (e)=>{ const pt=view.toMap({x:e.x,y:e.y}); if(pt) findNearest(pt); });
+    // Atualiza "nearest" com interações básicas
     view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
     view.when(()=>{ if(view.center) findNearest(view.center); });
+
+    // Adiciona um listener para atualizar apenas quando o movimento do mouse terminar
+    let moveTimeout;
+    view.on("pointer-move", (e)=>{
+      clearTimeout(moveTimeout);
+      moveTimeout = setTimeout(() => {
+        const pt = view.toMap({x: e.x, y: e.y});
+        if(pt) findNearest(pt);
+      }, 100);
+    });
 
     /* ====== GPS ====== */
     btnGPS.addEventListener("click", ()=>{
@@ -381,218 +810,67 @@ view.ui.add(searchExpand, { position: 'top-left', index: 1 });
       );
     });
 
-    /* ====== VIIRS — simboli vettoriali (core+halo), NESSUN filtro extra ====== */
-    function viirsAlpha(hours){
-      if (hours == null || !isFinite(hours)) return 1;
-      if (hours <= 12) return 1;
-      if (hours >= 36) return 0.25;
-      const t = (hours - 12) / 24;
-      return 1 - 0.75 * t;
-    }
-    function hoursSinceFromAttrs(attrs){
-      if (attrs.esritimeutc) {
-        const ms = Number(attrs.esritimeutc);
-        if (Number.isFinite(ms)) return (Date.now() - ms) / 36e5;
-      }
-      if (attrs.ACQ_DATE && attrs.ACQ_TIME){
-        try{
-          const d = new Date(attrs.ACQ_DATE);
-          const t = String(attrs.ACQ_TIME).padStart(4,'0');
-          d.setUTCHours(Number(t.slice(0,2)), Number(t.slice(2,4)), 0, 0);
-          return (Date.now() - d.getTime()) / 36e5;
-        }catch(_){}
-      }
-      return null;
-    }
-    function viirsClass(frp){
-      if (frp > 750) return { core: 12, halo: 18 };
-      if (frp > 300) return { core: 10, halo: 14 };
-      if (frp > 100) return { core:  8, halo:  0 };
-      if (frp > 10)  return { core:  6, halo:  0 };
-      return             { core:  4, halo:  0 };
-    }
-    function sizeDeltaForScale(scale){
-      if (scale > 2000000) return 0;
-      if (scale > 1000000) return 1;
-      if (scale >  500000) return 2;
-      if (scale >  250000) return 2;
-      if (scale >   35000) return 3;
-      return 3;
-    }
-    // ---------- Helpers robusti UTC ----------
-
-// Parser tollerante ai formati più comuni e forzato in UTC
-function parseDateUTC(raw) {
-  if (raw == null) return null;
-  if (raw instanceof Date && !isNaN(raw)) return raw;
-  const s = String(raw).trim();
-
-  // Epoch sec / ms
-  if (/^\d{10}$/.test(s)) return new Date(Number(s) * 1000);
-  if (/^\d{13}$/.test(s)) return new Date(Number(s));
-
-  // ISO con Z/offset
-  if (s.includes('T') && (/[Zz]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s))) {
-    const d = new Date(s);
-    return isNaN(d) ? null : d;
-  }
-
-  // "YYYY-MM-DD HH:mm[:ss] UTC"
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?\s*UTC$/i);
-  if (m) {
-    const [ , Y, Mo, D, H, Mi, Se='0' ] = m;
-    return new Date(Date.UTC(+Y, +Mo-1, +D, +H, +Mi, +Se));
-  }
-
-  // "YYYY-MM-DD HH:mm[:ss]" o con "/" → interpreta come UTC
-  m = s.match(/^(\d{4})[-/](\d{2})[-/](\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
-  if (m) {
-    const [ , Y, Mo, D, H, Mi, Se='0' ] = m;
-    return new Date(Date.UTC(+Y, +Mo-1, +D, +H, +Mi, +Se));
-  }
-
-  // "DD Mon YYYY HH:mm[:ss] UTC"
-  m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?\s*UTC$/i);
-  if (m) {
-    const months = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
-    const [ , D, Mon, Y, H, Mi, Se='0' ] = m;
-    const mi = months[Mon.toLowerCase()];
-    if (mi != null) return new Date(Date.UTC(+Y, mi, +D, +H, +Mi, +Se));
-  }
-
-  // Tentativo ISO aggiungendo Z
-  if (!/[Zz]$/.test(s) && !/[+\-]\d{2}:\d{2}$/.test(s) && s.includes('T')) {
-    const dZ = new Date(s + 'Z');
-    if (!isNaN(dZ)) return dZ;
-  }
-
-  // Fallback
-  const d = new Date(s);
-  return isNaN(d) ? null : d;
-}
-
-function formatAsISOUTC(raw) {
-  const d = parseDateUTC(raw);
-  return d ? d.toISOString().replace('.000','') : null; // es: 2025-08-23T19:40:00Z
-}
-
-function hoursSinceUTC(acquiredRaw, now = new Date()) {
-  const acquired = parseDateUTC(acquiredRaw);
-  if (!acquired) return { value: null, label: '—' };
-  const diffMs = now.getTime() - acquired.getTime();
-  const h = Math.round((diffMs / 3_600_000) * 10) / 10;
-  const label = h >= 0 ? `${h.toFixed(1)}` : `in ${Math.abs(h).toFixed(1)}`;
-  return { value: h, label };
-}
-
-// Estrae la data di acquisizione dai vari campi VIIRS/FIRMS e la rende stringa UTC
-function getAcquiredUTCString(attrs) {
-  // Priorità 1: esritimeutc (epoch ms)
-  if (attrs?.esritimeutc != null && !Number.isNaN(Number(attrs.esritimeutc))) {
-    const d = new Date(Number(attrs.esritimeutc));
-    return d.toISOString(); // già UTC
-  }
-  // Priorità 2: ACQ_DATE + ACQ_TIME (FIRMS)
-  if (attrs?.ACQ_DATE && attrs?.ACQ_TIME != null) {
-    const t = String(attrs.ACQ_TIME).padStart(4, '0'); // es: 1940 → "1940"
-    const s = `${attrs.ACQ_DATE} ${t.slice(0,2)}:${t.slice(2,4)}:00 UTC`;
-    const d = parseDateUTC(s);
-    return d ? d.toISOString() : null;
-  }
-  // Priorità 3: altri alias comuni
-  const cand = attrs?.acq_time ?? attrs?.Acquired ?? attrs?.acq_datetime ?? attrs?.datetime ?? null;
-  const d = parseDateUTC(cand);
-  return d ? d.toISOString() : null;
-}
-
-// ---------- SOSTITUZIONE: nuova viirsPopup ----------
-
-function viirsPopup(attrs, lon, lat){
-  const num = v => (Number.isFinite(v) ? v : NaN);
-  const frp  = num(Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW));
-  const conf = attrs.confidence ?? attrs.conf ?? attrs.confidence_text ?? "";
-  const dnRaw = attrs.daynight ?? attrs.DayNight ?? attrs.DN ?? "";
-  const dn  = (dnRaw==="D" ? "Day" : dnRaw==="N" ? "Night" : (dnRaw||""));
-  const sat = attrs.satellite ?? attrs.sat ?? "";
-
-  // Data acquisizione normalizzata in UTC
-  const acquiredIso = getAcquiredUTCString(attrs);
-  const acquiredDisp = acquiredIso
-    ? acquiredIso.replace('T',' ').replace('Z',' UTC').slice(0,19+4) // "YYYY-MM-DD HH:mm:ss UTC"
-    : "—";
-
-  // Hours since coerente (in ore, numero e label)
-  const hs = hoursSinceUTC(acquiredIso);
-  const hours = Number.isFinite(hs.value) ? hs.value : NaN;
-
-  const html = `
-    <div style="font-size:12px;line-height:1.25">
-      <div><b>FRP</b>: ${Number.isFinite(frp) ? frp.toFixed(1) + " MW" : "—"}</div>
-      ${sat ? `<div><b>Satellite</b>: ${sat}</div>` : ""}
-      ${dn  ? `<div><b>Day/Night</b>: ${dn}</div>` : ""}
-      ${conf? `<div><b>Confidence</b>: ${conf}</div>` : ""}
-      <div><b>Acquired</b>: ${acquiredDisp}</div>
-      <div><b>Hours since</b>: ${Number.isFinite(hours) ? hs.label : "—"}</div>
-      <div style="margin-top:6px"><b>Coords</b>: ${(+lat).toFixed(5)}, ${(+lon).toFixed(5)}</div>
-    </div>`;
-
-  return { title: "VIIRS Thermal Hotspot", content: html };
-}
-
-
+    /* ====== VIIRS (GeoJSON via fetch senza credenziali; "tutto" senza filtri) ====== */
     const VIIRS_QUERY_BASE =
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
 
-        function viirsGeoJsonUrl(){
-  // Envelope Europa (WGS84)
-  const europeEnv = {
-    xmin: -31, ymin: 35, xmax: 10, ymax: 44,
-    spatialReference: { wkid: 4326 }
-  };
+    function viirsGeoJsonUrl(){
+      // Envelope Europa (WGS84)
+      const europeEnv = {
+        xmin: -31, ymin: 35, xmax: 10, ymax: 44,
+        spatialReference: { wkid: 4326 }
+      };
 
-  // Ultime 72 ore (UTC, millisecondi)
-  const endMs = Date.now();
-  const startMs = endMs - 96 * 3600 * 1000;
+      // Ultime 96 ore (UTC, millisecondi)
+      const endMs = Date.now();
+      const startMs = endMs - 96 * 3600 * 1000;
 
-  const params = new URLSearchParams({
-    where: "1=1",
-    outFields: "*",
-    outSR: "4326",
-    f: "geojson",
-    returnGeometry: "true",
-    geometry: JSON.stringify(europeEnv),
-    geometryType: "esriGeometryEnvelope",
-    inSR: "4326",
-    spatialRel: "esriSpatialRelIntersects",
-    // filtro temporale nativo (il layer è time-enabled su acq_time)
-    time: `${startMs},${endMs}`
-  });
+      const params = new URLSearchParams({
+        where: "1=1",
+        outFields: "*",
+        outSR: "4326",
+        f: "geojson",
+        returnGeometry: "true",
+        geometry: JSON.stringify(europeEnv),
+        geometryType: "esriGeometryEnvelope",
+        inSR: "4326",
+        spatialRel: "esriSpatialRelIntersects",
+        // filtro temporale nativo (il layer è time-enabled su acq_time)
+        time: `${startMs},${endMs}`
+      });
 
-  return `${VIIRS_QUERY_BASE}?${params.toString()}`;
-}
-
-
-
-
+      return `${VIIRS_QUERY_BASE}?${params.toString()}`;
+    }
 
     let viirsFeaturesCache = [];
     let viirsOn = false;
 
     async function loadVIIRSAll(){
+      if (isVIIRSLoading) return;
+      isVIIRSLoading = true;
+      
       try{
+        // Mostra l'indicatore di caricamento
+        btnFire.classList.add("fire-loading");
+        
         const url = viirsGeoJsonUrl();
         const res = await fetch(url, { method:"GET", mode:"cors", credentials:"omit", cache:"no-store" });
         if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const gj = await res.json();
-        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON non valido");
+        if(!gj || !Array.isArray(gj.features)) throw new Error("GeoJSON não válido");
         drawVIIRS(gj.features);
         showToast("Incêndios VIIRS: ON");
+        // Aggiorna la legenda dopo il caricamento VIIRS
+        updateLegend();
       } catch(err){
         console.error("VIIRS fetch error:", err);
         showError("Falha ao carregar dados de incêndios (VIIRS).");
         clearVIIRS();
         btnFire.setAttribute("aria-pressed","false");
         viirsOn = false;
+      } finally {
+        isVIIRSLoading = false;
+        btnFire.classList.remove("fire-loading");
       }
     }
     function drawVIIRS(features){
@@ -600,90 +878,38 @@ function viirsPopup(attrs, lon, lat){
       redrawVIIRS();
     }
     function redrawVIIRS(){
-  viirsLayer.removeAll();
-  const scale = view.scale || 1000000;
-  
-  // Trova l'incendio più recente
-  let mostRecentFire = null;
-  let mostRecentTime = 0;
-  
-  for (const f of viirsFeaturesCache) {
-    const attrs = f.properties || {};
-    const acquiredIso = getAcquiredUTCString(attrs);
-    const acquiredTime = acquiredIso ? new Date(acquiredIso).getTime() : 0;
-    
-    if (acquiredTime > mostRecentTime) {
-      mostRecentTime = acquiredTime;
-      mostRecentFire = f;
-    }
-  }
-  
-  // Disegna tutti i punti VIIRS
-  for (const f of viirsFeaturesCache) {
-    const c = f.geometry && f.geometry.coordinates;
-    if (!c) continue;
-    const attrs = f.properties || {};
-    const lon = +c[0], lat = +c[1];
-    const isMostRecent = f === mostRecentFire;
+      viirsLayer.removeAll();
+      const scale = view.scale || 1000000;
+      for (const f of viirsFeaturesCache){
+        const c = f.geometry && f.geometry.coordinates;
+        if (!c) continue;
+        const attrs = f.properties || {};
+        const lon = +c[0], lat = +c[1];
 
-    const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
-    const h = hoursSinceFromAttrs(attrs);
-    const a = viirsAlpha(h);
-    const sizes = viirsClass(frp);
-    const delta = sizeDeltaForScale(scale);
+        const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
+        const h = hoursSinceFromAttrs(attrs);
+        const a = viirsAlpha(h);
+        const sizes = viirsClass(frp);
+        const delta = sizeDeltaForScale(scale);
 
-    // Simbolo speciale per l'incendio più recente
-    if (isMostRecent) {
-      // Halo (giallo) con effetto glow
-      viirsLayer.add(new Graphic({
-        geometry: { type:"point", longitude: lon, latitude: lat },
-        attributes: attrs,
-        symbol: new SimpleMarkerSymbol({ 
-          style:"circle", 
-          color:[255,235,59, Math.min(1, a*0.9)], 
-          size: sizes.halo + delta + 4, 
-          outline:{ color:[255,255,255,0], width:0 } 
-        }),
-        popupTemplate: viirsPopup(attrs, lon, lat)
-      }));
-      
-      // Core (rosso) con effetto pulsante
-      viirsLayer.add(new Graphic({
-        geometry: { type:"point", longitude: lon, latitude: lat },
-        attributes: attrs,
-        symbol: new SimpleMarkerSymbol({ 
-          style:"circle", 
-          color:[255,0,0, a], 
-          size: sizes.core + delta + 2, 
-          outline:{ color:[255,255,255,0.8], width:1.5 } 
-        }),
-        popupTemplate: viirsPopup(attrs, lon, lat)
-      }));
-    } else {
-      // Simboli normali per tutti gli altri incendi
-      if (sizes.halo){
+        // Halo (giallo) per FRP alti
+        if (sizes.halo){
+          viirsLayer.add(new Graphic({
+            geometry: { type:"point", longitude: lon, latitude: lat },
+            attributes: attrs,
+            symbol: new SimpleMarkerSymbol({ style:"circle", color:[255,235,59, Math.min(1, a*0.9)], size: sizes.halo + delta, outline:{ color:[255,255,255,0], width:0 } }),
+            popupTemplate: createVIIRSPopupTemplate(attrs)
+          }));
+        }
+        // Core (rosso)
         viirsLayer.add(new Graphic({
           geometry: { type:"point", longitude: lon, latitude: lat },
           attributes: attrs,
-          symbol: new SimpleMarkerSymbol({ style:"circle", color:[255,235,59, Math.min(1, a*0.9)], size: sizes.halo + delta, outline:{ color:[255,255,255,0], width:0 } }),
-          popupTemplate: viirsPopup(attrs, lon, lat)
+          symbol: new SimpleMarkerSymbol({ style:"circle", color:[229,57,53, a], size: sizes.core + delta, outline:{ color:[60,0,0, a], width:0 } }),
+            popupTemplate: createVIIRSPopupTemplate(attrs)
         }));
       }
-      
-      viirsLayer.add(new Graphic({
-        geometry: { type:"point", longitude: lon, latitude: lat },
-        attributes: attrs,
-        symbol: new SimpleMarkerSymbol({ style:"circle", color:[229,57,53, a], size: sizes.core + delta, outline:{ color:[60,0,0, a], width:0 } }),
-        popupTemplate: viirsPopup(attrs, lon, lat)
-      }));
     }
-  }
-  
-  // Aggiungi animazione per l'incendio più recente
-  if (mostRecentFire) {
-    animateMostRecentFire(mostRecentFire);
-  }
-}
     function clearVIIRS(){ viirsLayer.removeAll(); viirsFeaturesCache = []; }
 
     // Toggle fiamma
@@ -703,48 +929,54 @@ function viirsPopup(attrs, lon, lat){
 
     // Ridisegna simboli alla variazione di scala
     view.watch("scale", ()=>{ if (viirsOn && viirsFeaturesCache.length) redrawVIIRS(); });
-function animateMostRecentFire(fireFeature) {
-  const c = fireFeature.geometry.coordinates;
-  const lon = +c[0], lat = +c[1];
-  const attrs = fireFeature.properties || {};
-  const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
-  const sizes = viirsClass(frp);
-  const scale = view.scale || 1000000;
-  const delta = sizeDeltaForScale(scale);
-  
-  // Crea un simbolo animato con effetto pulsante
-  const pulseGraphic = new Graphic({
-    geometry: { type:"point", longitude: lon, latitude: lat },
-    symbol: new SimpleMarkerSymbol({
-      style:"circle",
-      color:[255,255,255,0.3],
-      size: sizes.halo ? sizes.halo + delta + 80 : sizes.core + delta + 7,
-      outline:{ color:[255,250,0,0.6], width:2 }
-    })
-  });
-  
-  viirsLayer.add(pulseGraphic);
-  
-  // Animazione di pulsazione
-  let size = sizes.halo ? sizes.halo + delta + 30 : sizes.core + delta + 6;
-  let growing = false;
-  
-  const pulseAnimation = setInterval(() => {
-    if (!viirsOn) {
-      clearInterval(pulseAnimation);
-      return;
+
+    /* ====== Funzioni VIIRS dal file originale ====== */
+    function viirsAlpha(hours){
+      if (hours == null || !isFinite(hours)) return 1;
+      if (hours <= 12) return 1;
+      if (hours >= 36) return 0.25;
+      const t = (hours - 12) / 24;
+      return 1 - 0.75 * t;
     }
     
-    size = growing ? size + 10 : size - 10;
+    function hoursSinceFromAttrs(attrs){
+      if (attrs.esritimeutc) {
+        const ms = Number(attrs.esritimeutc);
+        if (Number.isFinite(ms)) return (Date.now() - ms) / 36e5;
+      }
+      if (attrs.ACQ_DATE && attrs.ACQ_TIME){
+        try{
+          const d = new Date(attrs.ACQ_DATE);
+          const t = String(attrs.ACQ_TIME).padStart(4,'0');
+          d.setUTCHours(Number(t.slice(0,2)), Number(t.slice(2,4)), 0, 0);
+          return (Date.now() - d.getTime()) / 36e5;
+        }catch(_){}
+      }
+      return null;
+    }
     
-    if (size >= (sizes.halo ? sizes.halo + delta + 12 : sizes.core + delta + 10)) growing = false;
-    if (size <= (sizes.halo ? sizes.halo + delta + 6 : sizes.core + delta + 4)) growing = true;
+    function viirsClass(frp){
+      if (frp > 750) return { core: 12, halo: 18 };
+      if (frp > 300) return { core: 10, halo: 14 };
+      if (frp > 100) return { core:  8, halo:  0 };
+      if (frp > 10)  return { core:  6, halo:  0 };
+      return             { core:  4, halo:  0 };
+    }
     
-    pulseGraphic.symbol.size = size;
-    viirsLayer.refresh();
-  }, 150);
-}
-  }); // fine require
+    function sizeDeltaForScale(scale){
+      if (scale > 2000000) return 0;
+      if (scale > 1000000) return 1;
+      if (scale >  500000) return 2;
+      if (scale >  250000) return 2;
+      if (scale >   35000) return 3;
+      return 3;
+    }
+
+    // Inizializza la legenda e la scala
+    updateLegend();
+    updateScaleBar();
+
+  });
   </script>
 </body>
 </html>
