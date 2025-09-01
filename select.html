@@ -484,22 +484,9 @@
       }
       infoContent.innerHTML=html;
     }
-    // Interazioni (stile Document7: nessun debounce = tracking più reattivo)
-view.on("pointer-move", (e) => {
-  const pt = view.toMap({ x: e.x, y: e.y });
-  if (pt) findNearest(pt);
-});
-view.on("pointer-down", (e) => {
-  const pt = view.toMap({ x: e.x, y: e.y });
-  if (pt) findNearest(pt);
-});
-view.on("drag", () => {
-  if (view.center) findNearest(view.center.clone());
-});
-view.when(() => {
-  if (view.center) findNearest(view.center);
-});
-
+    view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
+    view.when(()=>{ if(view.center) findNearest(view.center); });
+    let moveTimeout; view.on("pointer-move", (e)=>{ clearTimeout(moveTimeout); moveTimeout = setTimeout(() => { const pt = view.toMap({x: e.x, y: e.y}); if(pt) findNearest(pt); }, 100); });
 
     /* ====== GPS ====== */
     btnGPS.addEventListener("click", ()=>{
@@ -548,30 +535,89 @@ view.when(() => {
     }
     function drawVIIRS(features){ viirsFeaturesCache = features || []; redrawVIIRS(); }
     function redrawVIIRS(){
-      viirsLayer.removeAll();
-      const scale = view.scale || 1000000;
-      for (const f of viirsFeaturesCache){
-        const c = f.geometry && f.geometry.coordinates; if (!c) continue;
-        const attrs = f.properties || {}; const lon = +c[0], lat = +c[1];
-        const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
-        const h = hoursSinceFromAttrs(attrs); const a = viirsAlpha(h);
-        const sizes = viirsClass(frp); const delta = sizeDeltaForScale(scale);
-        if (sizes.halo){
-          viirsLayer.add(new Graphic({
-            geometry: { type:"point", longitude: lon, latitude: lat },
-            attributes: attrs,
-            symbol: new SimpleMarkerSymbol({ style:"circle", color:[255,235,59, Math.min(1, a*0.9)], size: sizes.halo + delta, outline:{ color:[255,255,255,0], width:0 } }),
-            popupTemplate: createVIIRSPopupTemplate(attrs)
-          }));
-        }
+  viirsLayer.removeAll();
+  const scale = view.scale || 1000000;
+
+  // Trova l'hotspot più recente
+  let mostRecentFire = null;
+  let mostRecentTime = 0;
+  for (const f of viirsFeaturesCache) {
+    const attrs = f.properties || {};
+    const acquiredIso = getAcquiredUTCString(attrs);
+    const acquiredTime = acquiredIso ? new Date(acquiredIso).getTime() : 0;
+    if (acquiredTime > mostRecentTime) {
+      mostRecentTime = acquiredTime;
+      mostRecentFire = f;
+    }
+  }
+
+  for (const f of viirsFeaturesCache){
+    const c = f.geometry && f.geometry.coordinates; if (!c) continue;
+    const attrs = f.properties || {};
+    const lon = +c[0], lat = +c[1];
+    const isMostRecent = f === mostRecentFire;
+
+    const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
+    const h = hoursSinceFromAttrs(attrs);
+    const a = viirsAlpha(h);
+    const sizes = viirsClass(frp);
+    const delta = sizeDeltaForScale(scale);
+
+    if (isMostRecent) {
+      if (sizes.halo){
         viirsLayer.add(new Graphic({
           geometry: { type:"point", longitude: lon, latitude: lat },
           attributes: attrs,
-          symbol: new SimpleMarkerSymbol({ style:"circle", color:[229,57,53, a], size: sizes.core + delta, outline:{ color:[60,0,0, a], width:0 } }),
+          symbol: new SimpleMarkerSymbol({
+            style:"circle",
+            color:[255,235,59, Math.min(1, a*0.9)],
+            size: sizes.halo + delta + 4,
+            outline:{ color:[255,255,255,0], width:0 }
+          }),
           popupTemplate: createVIIRSPopupTemplate(attrs)
         }));
       }
+      viirsLayer.add(new Graphic({
+        geometry: { type:"point", longitude: lon, latitude: lat },
+        attributes: attrs,
+        symbol: new SimpleMarkerSymbol({
+          style:"circle",
+          color:[255,0,0, a],
+          size: sizes.core + delta + 2,
+          outline:{ color:[255,255,255,0.8], width:1.5 }
+        }),
+        popupTemplate: createVIIRSPopupTemplate(attrs)
+      }));
+    } else {
+      if (sizes.halo){
+        viirsLayer.add(new Graphic({
+          geometry: { type:"point", longitude: lon, latitude: lat },
+          attributes: attrs,
+          symbol: new SimpleMarkerSymbol({
+            style:"circle",
+            color:[255,235,59, Math.min(1, a*0.9)],
+            size: sizes.halo + delta,
+            outline:{ color:[255,255,255,0], width:0 }
+          }),
+          popupTemplate: createVIIRSPopupTemplate(attrs)
+        }));
+      }
+      viirsLayer.add(new Graphic({
+        geometry: { type:"point", longitude: lon, latitude: lat },
+        attributes: attrs,
+        symbol: new SimpleMarkerSymbol({
+          style:"circle",
+          color:[229,57,53, a],
+          size: sizes.core + delta,
+          outline:{ color:[60,0,0, a], width:0 }
+        }),
+        popupTemplate: createVIIRSPopupTemplate(attrs)
+      }));
     }
+  }
+
+  if (mostRecentFire) { animateMostRecentFire(mostRecentFire); }
+}
     function clearVIIRS(){ viirsLayer.removeAll(); viirsFeaturesCache = []; }
     btnFire.addEventListener("click", ()=>{
       const on = btnFire.getAttribute("aria-pressed")==="true";
@@ -759,7 +805,73 @@ view.when(() => {
     });
     /* ======================================================================================= */
 
-  });
+  
+  /* === Helpers for VIIRS most-recent detection & pulse animation (from Document7) === */
+  function parseDateUTC(raw) {
+    if (raw == null) return null;
+    if (raw instanceof Date && !isNaN(raw)) return raw;
+    const s = String(raw).trim();
+    if (/^\d{10}$/.test(s)) return new Date(Number(s) * 1000);
+    if (/^\d{13}$/.test(s)) return new Date(Number(s));
+    if (s.includes('T') && (/[Zz]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s))) {
+      const d = new Date(s);
+      return isNaN(d) ? null : d;
+    }
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  }
+
+  function getAcquiredUTCString(attrs) {
+    if (attrs?.esritimeutc != null && !Number.isNaN(Number(attrs.esritimeutc))) {
+      const d = new Date(Number(attrs.esritimeutc));
+      return d.toISOString();
+    }
+    if (attrs?.ACQ_DATE && attrs?.ACQ_TIME != null) {
+      const t = String(attrs.ACQ_TIME).padStart(4, '0');
+      const s = `${attrs.ACQ_DATE} ${t.slice(0,2)}:${t.slice(2,4)}:00 UTC`;
+      const d = parseDateUTC(s);
+      return d ? d.toISOString() : null;
+    }
+    const cand = attrs?.acq_time ?? attrs?.Acquired ?? attrs?.acq_datetime ?? attrs?.datetime ?? null;
+    const d = parseDateUTC(cand);
+    return d ? d.toISOString() : null;
+  }
+
+  function animateMostRecentFire(fireFeature) {
+    const c = fireFeature.geometry.coordinates;
+    const lon = +c[0], lat = +c[1];
+    const attrs = fireFeature.properties || {};
+    const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
+    const sizes = viirsClass(frp);
+    const scale = view.scale || 1000000;
+    const delta = sizeDeltaForScale(scale);
+
+    const pulseGraphic = new Graphic({
+      geometry: { type:"point", longitude: lon, latitude: lat },
+      symbol: new SimpleMarkerSymbol({
+        style:"circle",
+        color:[255,255,255,0.3],
+        size: sizes.halo ? sizes.halo + delta + 80 : sizes.core + delta + 7,
+        outline:{ color:[255,250,0,0.6], width:2 }
+      })
+    });
+    viirsLayer.add(pulseGraphic);
+
+    let size = sizes.halo ? sizes.halo + delta + 10 : sizes.core + delta + 6;
+    let growing = false;
+    const pulseAnimation = setInterval(() => {
+      if (!viirsOn) { clearInterval(pulseAnimation); return; }
+      size = growing ? size + 8 : size - 8;
+      if (size >= (sizes.halo ? sizes.halo + delta + 12 : sizes.core + delta + 10)) growing = false;
+      if (size <= (sizes.halo ? sizes.halo + delta + 6 : sizes.core + delta + 4))  growing = true;
+      pulseGraphic.symbol.size = size;
+      viirsLayer.remove(pulseGraphic);
+      viirsLayer.add(pulseGraphic);
+    }, 150);
+  }
+
+
+});
   </script>
 </body>
 </html>
