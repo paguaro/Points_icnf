@@ -484,9 +484,22 @@
       }
       infoContent.innerHTML=html;
     }
-    view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
-    view.when(()=>{ if(view.center) findNearest(view.center); });
-    let moveTimeout; view.on("pointer-move", (e)=>{ clearTimeout(moveTimeout); moveTimeout = setTimeout(() => { const pt = view.toMap({x: e.x, y: e.y}); if(pt) findNearest(pt); }, 100); });
+    // Interazioni (stile Document7: nessun debounce = tracking più reattivo)
+view.on("pointer-move", (e) => {
+  const pt = view.toMap({ x: e.x, y: e.y });
+  if (pt) findNearest(pt);
+});
+view.on("pointer-down", (e) => {
+  const pt = view.toMap({ x: e.x, y: e.y });
+  if (pt) findNearest(pt);
+});
+view.on("drag", () => {
+  if (view.center) findNearest(view.center.clone());
+});
+view.when(() => {
+  if (view.center) findNearest(view.center);
+});
+
 
     /* ====== GPS ====== */
     btnGPS.addEventListener("click", ()=>{
