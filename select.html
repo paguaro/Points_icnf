@@ -86,6 +86,14 @@
   .sel-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
   .sel-row button { flex:1; min-width:120px; }
   .sel-counter { font-size:11px; margin:6px 0; color:#333; }
+
+  /* === VIIRS button states === */
+  #btnFire.state-off { background:#e0e0e0; color:#666; border:1px solid #ccc; }
+  #btnFire.state-on { background:#e53935; color:#fff; }
+  #btnFire.state-hot { background:#0d47a1; color:#fff; }
+  /* subtle halo when hot-mode to reduce noise */
+  .viirs-hot-ring { mix-blend-mode: screen; }
+
 </style>
 </head>
 <body>
@@ -504,9 +512,11 @@
       );
     });
 
-    /* ====== VIIRS ====== */
+    
+    /* ====== VIIRS — Deepseek-style symbols & animations ====== */
     const VIIRS_QUERY_BASE =
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
+
     function viirsGeoJsonUrl(){
       const europeEnv = { xmin:-31, ymin:35, xmax:10, ymax:44, spatialReference:{ wkid:4326 } };
       const endMs = Date.now(), startMs = endMs - 96*3600*1000;
@@ -517,7 +527,17 @@
       });
       return `${VIIRS_QUERY_BASE}?${params.toString()}`;
     }
-    let viirsFeaturesCache = []; let viirsOn = false;
+
+    let viirsFeaturesCache = [];
+    let viirsOn = false;
+    let viirsHotMode = false;               // double-click / long-press: accent top-10 FRP
+    let viirsAnimTimers = [];               // to clear flashing intervals on redraw
+
+    function clearAnimTimers(){
+      for (const t of viirsAnimTimers) try { clearInterval(t); } catch(_){}
+      viirsAnimTimers = [];
+    }
+
     async function loadVIIRSAll(){
       if (isVIIRSLoading) return; isVIIRSLoading = true; btnFire.classList.add("fire-loading");
       try{
@@ -528,103 +548,237 @@
       } catch(err){
         console.error("VIIRS fetch error:", err);
         showError("Falha ao carregar dados de incêndios (VIIRS).");
-        clearVIIRS(); btnFire.setAttribute("aria-pressed","false"); viirsOn = false;
+        clearVIIRS(); btnFire.setAttribute("aria-pressed","false"); viirsOn = false; setBtnState('off');
       } finally {
         isVIIRSLoading = false; btnFire.classList.remove("fire-loading");
       }
     }
+
     function drawVIIRS(features){ viirsFeaturesCache = features || []; redrawVIIRS(); }
+
+    function setBtnState(state){
+      btnFire.classList.remove('state-off','state-on','state-hot');
+      if(state==='off') btnFire.classList.add('state-off');
+      else if(state==='hot') btnFire.classList.add('state-hot');
+      else btnFire.classList.add('state-on');
+    }
+
     function redrawVIIRS(){
-  viirsLayer.removeAll();
-  const scale = view.scale || 1000000;
+      viirsLayer.removeAll();
+      clearAnimTimers();
+      const scale = view.scale || 1000000;
 
-  // Trova l'hotspot più recente
-  let mostRecentFire = null;
-  let mostRecentTime = 0;
-  for (const f of viirsFeaturesCache) {
-    const attrs = f.properties || {};
-    const acquiredIso = getAcquiredUTCString(attrs);
-    const acquiredTime = acquiredIso ? new Date(acquiredIso).getTime() : 0;
-    if (acquiredTime > mostRecentTime) {
-      mostRecentTime = acquiredTime;
-      mostRecentFire = f;
-    }
-  }
+      // Build enriched array with timestamps and frp
+      const enriched = [];
+      for(const f of viirsFeaturesCache){
+        const c = f.geometry && f.geometry.coordinates; if(!c) continue;
+        const attrs = f.properties || {};
+        const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW) || 0;
+        const acquiredIso = getAcquiredUTCString(attrs);
+        const t = acquiredIso ? (new Date(acquiredIso)).getTime() : 0;
+        enriched.push({f, c, attrs, frp, t});
+      }
+      // Sort for recency and heat
+      const byRecent = [...enriched].sort((a,b)=>b.t - a.t).slice(0, 10);       // last 10 acquired
+      const byHot    = [...enriched].sort((a,b)=>b.frp - a.frp).slice(0, 10);   // 10 highest FRP
+      const recentSet = new Set(byRecent.map(o=>o.f));
+      const hotSet    = new Set(byHot.map(o=>o.f));
 
-  for (const f of viirsFeaturesCache){
-    const c = f.geometry && f.geometry.coordinates; if (!c) continue;
-    const attrs = f.properties || {};
-    const lon = +c[0], lat = +c[1];
-    const isMostRecent = f === mostRecentFire;
+      // Draw all points with base symbology
+      for(const o of enriched){
+        const lon = +o.c[0], lat = +o.c[1];
+        const frp = o.frp;
+        const hours = hoursSinceFromAttrs(o.attrs);
+        const alpha = viirsAlpha(hours);
+        const sizes = viirsClass(frp);
+        const delta = sizeDeltaForScale(scale);
 
-    const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
-    const h = hoursSinceFromAttrs(attrs);
-    const a = viirsAlpha(h);
-    const sizes = viirsClass(frp);
-    const delta = sizeDeltaForScale(scale);
+        // Optional yellow halo scaled by FRP class
+        if (sizes.halo){
+          viirsLayer.add(new Graphic({
+            geometry: { type:"point", longitude: lon, latitude: lat },
+            attributes: o.attrs,
+            symbol: new SimpleMarkerSymbol({
+              style:"circle",
+              color:[255,235,59, Math.min(1, alpha*0.9)],
+              size: sizes.halo + delta,
+              outline:{ color:[255,255,255,0], width:0 }
+            }),
+            popupTemplate: createVIIRSPopupTemplate ? createVIIRSPopupTemplate(o.attrs) : viirsPopup(o.attrs, lon, lat)
+          }));
+        }
 
-    if (isMostRecent) {
-      if (sizes.halo){
+        // Core symbol
         viirsLayer.add(new Graphic({
           geometry: { type:"point", longitude: lon, latitude: lat },
-          attributes: attrs,
+          attributes: o.attrs,
           symbol: new SimpleMarkerSymbol({
             style:"circle",
-            color:[255,235,59, Math.min(1, a*0.9)],
-            size: sizes.halo + delta + 4,
-            outline:{ color:[255,255,255,0], width:0 }
+            color:[229,57,53, alpha],
+            size: sizes.core + delta,
+            outline:{ color:[60,0,0, alpha], width:0 }
           }),
-          popupTemplate: createVIIRSPopupTemplate(attrs)
+          popupTemplate: createVIIRSPopupTemplate ? createVIIRSPopupTemplate(o.attrs) : viirsPopup(o.attrs, lon, lat)
         }));
-      }
-      viirsLayer.add(new Graphic({
-        geometry: { type:"point", longitude: lon, latitude: lat },
-        attributes: attrs,
-        symbol: new SimpleMarkerSymbol({
-          style:"circle",
-          color:[255,0,0, a],
-          size: sizes.core + delta + 2,
-          outline:{ color:[255,255,255,0.8], width:1.5 }
-        }),
-        popupTemplate: createVIIRSPopupTemplate(attrs)
-      }));
-    } else {
-      if (sizes.halo){
-        viirsLayer.add(new Graphic({
-          geometry: { type:"point", longitude: lon, latitude: lat },
-          attributes: attrs,
-          symbol: new SimpleMarkerSymbol({
-            style:"circle",
-            color:[255,235,59, Math.min(1, a*0.9)],
-            size: sizes.halo + delta,
-            outline:{ color:[255,255,255,0], width:0 }
-          }),
-          popupTemplate: createVIIRSPopupTemplate(attrs)
-        }));
-      }
-      viirsLayer.add(new Graphic({
-        geometry: { type:"point", longitude: lon, latitude: lat },
-        attributes: attrs,
-        symbol: new SimpleMarkerSymbol({
-          style:"circle",
-          color:[229,57,53, a],
-          size: sizes.core + delta,
-          outline:{ color:[60,0,0, a], width:0 }
-        }),
-        popupTemplate: createVIIRSPopupTemplate(attrs)
-      }));
-    }
-  }
 
-  if (mostRecentFire) { animateMostRecentFire(mostRecentFire); }
-}
-    function clearVIIRS(){ viirsLayer.removeAll(); viirsFeaturesCache = []; }
+        // Special blue ring for FRP > 200 (always)
+        if (frp > 200){
+          const ring = new Graphic({
+            geometry: { type:"point", longitude: lon, latitude: lat },
+            attributes: o.attrs,
+            symbol: new SimpleMarkerSymbol({
+              style:"circle",
+              color:[13,71,161, 0.18],              // dark blue translucent
+              size: (sizes.halo || sizes.core) + delta + 8,
+              outline:{ color:[13,71,161, 0.7], width:1.5 }
+            })
+          });
+          viirsLayer.add(ring);
+
+          // gentle pulse (reduced when hot-mode to meet "minore halo")
+          let grow = true;
+          viirsAnimTimers.push(setInterval(()=>{
+            const base = (sizes.halo || sizes.core) + delta + 6;
+            const max = base + (viirsHotMode ? 2 : 5);
+            const min = base - 2;
+            const sym = ring.symbol;
+            sym.size = Math.max(min, Math.min(max, (sym.size || base) + (grow?1:-1)));
+            grow = sym.size >= max ? false : sym.size <= min ? true : grow;
+            ring.symbol = sym;
+            viirsLayer.remove(ring); viirsLayer.add(ring);
+          }, 180));
+        }
+
+        // Flashing effect for the 10 most recent acquisitions
+        if (recentSet.has(o.f)){
+          const flash = new Graphic({
+            geometry: { type:"point", longitude: lon, latitude: lat },
+            attributes: o.attrs,
+            symbol: new SimpleMarkerSymbol({
+              style:"circle",
+              color:[255,255,255,0.35],
+              size: (sizes.halo || sizes.core) + delta + 10,
+              outline:{ color:[255,255,255,0.0], width:0 }
+            })
+          });
+          viirsLayer.add(flash);
+          let on = true;
+          viirsAnimTimers.push(setInterval(()=>{
+            flash.symbol.color[3] = on ? 0.35 : 0.05;
+            on = !on;
+            viirsLayer.remove(flash); viirsLayer.add(flash);
+          }, 220));
+        }
+
+        // Accento visivo in hot-mode per i 10 più caldi (FRP)
+        if (viirsHotMode && hotSet.has(o.f)){
+          const hotRing = new Graphic({
+            geometry: { type:"point", longitude: lon, latitude: lat },
+            attributes: o.attrs,
+            symbol: new SimpleMarkerSymbol({
+              style:"circle",
+              color:[13,71,161, 0.22],
+              size: (sizes.halo || sizes.core) + delta + 14,
+              outline:{ color:[21,101,192, 0.9], width:2 }
+            })
+          });
+          viirsLayer.add(hotRing);
+        }
+      }
+    }
+
+    function clearVIIRS(){ viirsLayer.removeAll(); viirsFeaturesCache = []; clearAnimTimers(); }
+
+    // Button interactions
+    function setFireButtonVisual(){
+      if(!viirsOn){ setBtnState('off'); btnFire.setAttribute("aria-pressed","false"); }
+      else if(viirsHotMode){ setBtnState('hot'); btnFire.setAttribute("aria-pressed","true"); }
+      else { setBtnState('on'); btnFire.setAttribute("aria-pressed","true"); }
+    }
+
+    // single click: toggle layer
     btnFire.addEventListener("click", ()=>{
       const on = btnFire.getAttribute("aria-pressed")==="true";
-      if(on){ btnFire.setAttribute("aria-pressed","false"); viirsOn=false; clearVIIRS(); showToast("Incêndios VIIRS: OFF"); }
-      else { btnFire.setAttribute("aria-pressed","true"); viirsOn=true; loadVIIRSAll(); }
+      if(on){ viirsOn=false; viirsHotMode=false; clearVIIRS(); showToast("Incêndios VIIRS: OFF"); }
+      else { viirsOn=true; viirsHotMode=false; loadVIIRSAll(); }
+      setFireButtonVisual();
     });
+
+    // double click: toggle hot mode (requires layer ON)
+    btnFire.addEventListener("dblclick", (e)=>{
+      e.preventDefault();
+      if(!viirsOn){ viirsOn=true; loadVIIRSAll(); }
+      viirsHotMode = !viirsHotMode;
+      setFireButtonVisual();
+      if(viirsFeaturesCache.length) redrawVIIRS();
+      showToast(viirsHotMode ? "Top 10 FRP (modo quente)" : "Vista normal VIIRS");
+    });
+
+    // long-press (mobile & mouse): 500ms
+    (function(){
+      let pressTimer = null;
+      btnFire.addEventListener("mousedown", (e)=>{
+        pressTimer = setTimeout(()=>{
+          if(!viirsOn){ viirsOn=true; loadVIIRSAll(); }
+          viirsHotMode = !viirsHotMode;
+          setFireButtonVisual();
+          if(viirsFeaturesCache.length) redrawVIIRS();
+          showToast(viirsHotMode ? "Top 10 FRP (modo quente)" : "Vista normal VIIRS");
+        }, 500);
+      });
+      ["mouseup","mouseleave","mouseout","touchend","touchcancel"].forEach(ev=>{
+        btnFire.addEventListener(ev, ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } });
+      });
+      btnFire.addEventListener("touchstart", (e)=>{
+        pressTimer = setTimeout(()=>{
+          if(!viirsOn){ viirsOn=true; loadVIIRSAll(); }
+          viirsHotMode = !viirsHotMode;
+          setFireButtonVisual();
+          if(viirsFeaturesCache.length) redrawVIIRS();
+          showToast(viirsHotMode ? "Top 10 FRP (modo quente)" : "Vista normal VIIRS");
+        }, 500);
+      }, {passive:true});
+    })();
+
     view.watch("scale", ()=>{ if (viirsOn && viirsFeaturesCache.length) redrawVIIRS(); });
+
+    // === Helpers from Deepseek for robust time parsing ===
+    function parseDateUTC(raw) {
+      if (raw == null) return null;
+      if (raw instanceof Date && !isNaN(raw)) return raw;
+      const s = String(raw).trim();
+      if (/^\d{10}$/.test(s)) return new Date(Number(s) * 1000);
+      if (/^\d{13}$/.test(s)) return new Date(Number(s));
+      if (s.includes('T') && (/[Zz]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s))) {
+        const d = new Date(s);
+        return isNaN(d) ? null : d;
+      }
+      const d = new Date(s);
+      return isNaN(d) ? null : d;
+    }
+    function hoursSinceUTC(acquiredRaw, now = new Date()) {
+      const acquired = parseDateUTC(acquiredRaw);
+      if (!acquired) return { value: null, label: '—' };
+      const diffMs = now.getTime() - acquired.getTime();
+      const h = Math.round((diffMs / 3_600_000) * 10) / 10;
+      const label = h >= 0 ? `${h.toFixed(1)}` : `in ${Math.abs(h).toFixed(1)}`;
+      return { value: h, label };
+    }
+    function getAcquiredUTCString(attrs) {
+      if (attrs?.esritimeutc != null && !Number.isNaN(Number(attrs.esritimeutc))) {
+        const d = new Date(Number(attrs.esritimeutc));
+        return d.toISOString();
+      }
+      if (attrs?.ACQ_DATE && attrs?.ACQ_TIME != null) {
+        const t = String(attrs.ACQ_TIME).padStart(4, '0');
+        const s = `${attrs.ACQ_DATE} ${t.slice(0,2)}:${t.slice(2,4)}:00 UTC`;
+        const d = parseDateUTC(s);
+        return d ? d.toISOString() : null;
+      }
+      const cand = attrs?.acq_time ?? attrs?.Acquired ?? attrs?.acq_datetime ?? attrs?.datetime ?? null;
+      const d = parseDateUTC(cand);
+      return d ? d.toISOString() : null;
+    }
     function viirsAlpha(hours){ if (hours==null||!isFinite(hours)) return 1; if (hours<=12) return 1; if (hours>=36) return 0.25; const t=(hours-12)/24; return 1 - 0.75*t; }
     function hoursSinceFromAttrs(attrs){
       if (attrs.esritimeutc) { const ms=Number(attrs.esritimeutc); if (Number.isFinite(ms)) return (Date.now() - ms)/36e5; }
@@ -633,11 +787,29 @@
     }
     function viirsClass(frp){ if (frp>750) return { core:12, halo:18 }; if (frp>300) return { core:10, halo:14 }; if (frp>100) return { core:8, halo:0 }; if (frp>10) return { core:6, halo:0 }; return { core:4, halo:0 }; }
     function sizeDeltaForScale(scale){ if (scale>2000000) return 0; if (scale>1000000) return 1; if (scale>500000) return 2; if (scale>250000) return 2; if (scale>35000) return 3; return 3; }
-
-    // Inizializza legenda & scala
-    updateLegend(); updateScaleBar();
-
-    /* =======================================================================================
+    function viirsPopup(attrs, lon, lat){
+      const num = v => (Number.isFinite(v) ? v : NaN);
+      const frp  = num(Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW));
+      const conf = attrs.confidence ?? attrs.conf ?? attrs.confidence_text ?? "";
+      const dnRaw = attrs.daynight ?? attrs.DayNight ?? attrs.DN ?? "";
+      const dn  = (dnRaw==="D" ? "Day" : dnRaw==="N" ? "Night" : (dnRaw||""));
+      const sat = attrs.satellite ?? attrs.sat ?? "";
+      const acquiredIso = getAcquiredUTCString(attrs);
+      const acquiredDisp = acquiredIso ? acquiredIso.replace('T',' ').replace('Z',' UTC').slice(0,23) : "—";
+      const hs = hoursSinceUTC(acquiredIso);
+      const hours = Number.isFinite(hs.value) ? hs.value : NaN;
+      const html = `
+        <div style="font-size:12px;line-height:1.25">
+          <div><b>FRP</b>: ${Number.isFinite(frp) ? frp.toFixed(1) + " MW" : "—"}</div>
+          ${sat ? `<div><b>Satellite</b>: ${sat}</div>` : ""}
+          ${dn  ? `<div><b>Day/Night</b>: ${dn}</div>` : ""}
+          ${conf? `<div><b>Confidence</b>: ${conf}</div>` : ""}
+          <div><b>Acquired</b>: ${acquiredDisp}</div>
+          <div><b>Hours since</b>: ${Number.isFinite(hours) ? hs.label : "—"}</div>
+        </div>`;
+      return { title: "VIIRS Thermal Hotspot", content: html };
+    }
+/* =======================================================================================
        WIDGET “SELEZIONE” — rettangolo → raccoglie feature dei layer visibili → GeoJSON
        (semplice: contains-only)
        ======================================================================================= */
