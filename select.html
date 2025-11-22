@@ -91,8 +91,30 @@
   #btnFire.state-off { background:#e0e0e0; color:#666; border:1px solid #ccc; }
   #btnFire.state-on { background:#e53935; color:#fff; }
   #btnFire.state-hot { background:#0d47a1; color:#fff; }
-  /* subtle halo when hot-mode to reduce noise */
   .viirs-hot-ring { mix-blend-mode: screen; }
+
+  /* Lista risultati "pontos mais próximos" cliccabile */
+  .nearest-list { margin:0; padding:0; }
+  .nearest-item {
+    display:flex;
+    align-items:flex-start;
+    gap:6px;
+    padding:3px 4px;
+    border-radius:4px;
+    cursor:pointer;
+    transition:background-color 0.15s ease;
+  }
+  .nearest-item:hover { background:#f0f7ff; }
+  .nearest-dot {
+    flex:0 0 8px;
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    margin-top:5px;
+  }
+  .nearest-text { flex:1; font-size:12px; }
+  .nearest-name { margin:0; }
+  .nearest-distance { font-size:11px; color:#555; }
 
 </style>
 </head>
@@ -105,7 +127,7 @@
     <button id="btnFire" class="iconbtn" title="Incêndios (VIIRS)" aria-pressed="false">🔥</button>
   </div>
 
-  <!-- Pannello info "ponti vicini" -->
+  <!-- Pannello info "pontos de água mais próximos" -->
   <div id="infoPanel">
     <button id="toggleInfo" class="toggle-chip" title="Minimizar / Expandir">📋</button>
     <div id="infoContent"></div>
@@ -143,7 +165,6 @@
     "esri/widgets/Search","esri/widgets/BasemapGallery","esri/widgets/Expand",
     "esri/widgets/Zoom","esri/widgets/Home",
     "esri/request","esri/core/reactiveUtils",
-    /* Selezione (VM senza UI) */
     "esri/widgets/Sketch/SketchViewModel","esri/geometry/geometryEngine","esri/geometry/support/webMercatorUtils"
   ], function(Map,MapView,GraphicsLayer,Graphic,Point,Polyline,Extent,
               SimpleMarkerSymbol,SimpleLineSymbol,
@@ -168,7 +189,6 @@
     const linesLayer = new GraphicsLayer({ title:"Linhas de Conexão", listMode:"show" });
     const locLayer = new GraphicsLayer({ title:"Minha Localização", listMode:"show" });
     const viirsLayer = new GraphicsLayer({ title:"Incêndios VIIRS", listMode:"show" });
-    /* Selezione: disegno + highlight */
     const selectionDrawLayer = new GraphicsLayer({ title:"Desenho Selezione", listMode:"hide" });
     const selectionLayer    = new GraphicsLayer({ title:"Seleção", listMode:"show" });
 
@@ -227,7 +247,6 @@
     const symLocation = new SimpleMarkerSymbol({ color:[0,200,0,0.9], outline:{ color:[255,255,255], width:2 }, size:10 });
     const symLine     = new SimpleLineSymbol({ color:[255,0,0,0.7], width:1.5, style:"short-dash" });
     const symFire     = new SimpleMarkerSymbol({ color:[255,64,0,0.9], outline:null, size:6 });
-    /* Selezione */
     const symSelectedPoint = new SimpleMarkerSymbol({ style:"circle", color:[0,0,0,0], outline:{ color:[255,215,0,0.95], width:2 }, size:12 });
     const symSelectedLine  = new SimpleLineSymbol({ color:[255,215,0,0.95], width:3 });
 
@@ -268,14 +287,59 @@
     }
     map.layers.on("change", updateLegend);
 
-    // Barra scala
+    // Barra scala geodesica (segmento di ~100px al centro)
     function updateScaleBar() {
-      const scale = view.scale;
-      let distance, unit;
-      if (scale > 1000000) { distance = Math.round(scale / 100000) * 100; unit = "km"; distance = distance / 100; }
-      else if (scale > 1000) { distance = Math.round(scale / 100) * 100; unit = "m"; }
-      else { distance = Math.round(scale); unit = "m"; }
-      scaleBar.textContent = unit === "m" ? `${distance.toLocaleString('pt-PT')} m` : `${distance} ${unit}`;
+      try {
+        if (!view || !view.ready || !view.container) return;
+
+        const width = view.width;
+        const height = view.height;
+        if (!width || !height) return;
+
+        const cx = width / 2;
+        const cy = height / 2;
+        const p1Screen = { x: cx - 50, y: cy };
+        const p2Screen = { x: cx + 50, y: cy };
+
+        const p1Map = view.toMap(p1Screen);
+        const p2Map = view.toMap(p2Screen);
+        if (!p1Map || !p2Map) return;
+
+        let p1 = p1Map, p2 = p2Map;
+        if (p1.spatialReference && p1.spatialReference.wkid !== 4326) {
+          p1 = webMercatorUtils.webMercatorToGeographic(p1);
+          p2 = webMercatorUtils.webMercatorToGeographic(p2);
+        }
+
+        const dMeters = haversineMeters(
+          { latitude: p1.latitude, longitude: p1.longitude },
+          { latitude: p2.latitude, longitude: p2.longitude }
+        );
+
+        if (!isFinite(dMeters) || dMeters <= 0) return;
+
+        const pow10 = Math.pow(10, Math.floor(Math.log10(dMeters)));
+        const norm = dMeters / pow10;
+        let mult;
+        if (norm < 1.5) mult = 1;
+        else if (norm < 3.5) mult = 2;
+        else if (norm < 7.5) mult = 5;
+        else mult = 10;
+        const nice = mult * pow10;
+
+        let label, unit;
+        if (nice >= 1000) {
+          label = (nice / 1000).toLocaleString('pt-PT');
+          unit = "km";
+        } else {
+          label = nice.toLocaleString('pt-PT');
+          unit = "m";
+        }
+
+        scaleBar.textContent = `${label} ${unit}`;
+      } catch (e) {
+        console.error("Errore updateScaleBar:", e);
+      }
     }
     view.watch("scale", updateScaleBar);
     view.watch("center", updateScaleBar);
@@ -455,11 +519,19 @@
       const s=Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
       return Math.round(2*R*Math.asin(Math.sqrt(s)));
     }
+
     function findNearest(pt){
       if(!allPoints.length || !pt) return;
       linesLayer.removeAll();
       if(Object.keys(spatialGrid).length===0) buildSpatialGrid(allPoints);
+
       const active = filteredPointsLayer.graphics.items.length ? filteredPointsLayer.graphics.items : allPoints;
+      if (!active.length) {
+        nearest = [];
+        renderInfo();
+        return;
+      }
+
       const gridSize=0.5, gx=Math.floor(pt.longitude/gridSize), gy=Math.floor(pt.latitude/gridSize);
       let candidates=[];
       for(let x=gx-2; x<=gx+2; x++){
@@ -470,31 +542,93 @@
           }
         }
       }
-      if(candidates.length<4) candidates = active.map(g=>({ feature:g, distance:haversineMeters(pt, g.geometry) }));
+      if(candidates.length<4) {
+        candidates = active.map(g=>({ feature:g, distance:haversineMeters(pt, g.geometry) }));
+      }
       nearest = candidates.filter(o=> o.distance<=10000).sort((a,b)=>a.distance-b.distance).slice(0,4);
+
       for(const item of nearest){
         const line=new Polyline({ paths:[[pt.longitude,pt.latitude],[item.feature.geometry.longitude,item.feature.geometry.latitude]], spatialReference:{ wkid:4326 } });
         linesLayer.add(new Graphic({ geometry:line, symbol:symLine }));
       }
       renderInfo();
     }
-    function renderInfo(){
-      let html="<h4 style='margin:4px 0 6px'>Pontos de água mais próximos <small>(até 10 km)</small>:</h4>";
-      if(!nearest.length){ html+="<p style='margin:0'>Nenhum punto encontrado.</p>"; }
-      else {
-        html+="<ul style='margin:0; padding-left:16px; font-size:12px;'>";
-        for(const o of nearest){
-          const a=o.feature.attributes||{}; const name=a.nomenome||a.nome||"Sem nome";
-          const type=a.tipologia?(" ("+a.tipologia+")"):"";
-          html+="<li>"+name+type+" — "+o.distance.toLocaleString('pt-PT')+" m</li>";
-        }
-        html+="</ul>";
-      }
-      infoContent.innerHTML=html;
+
+    // click su un record → pan/zoom + popup
+    function focusNearestIndex(idx) {
+      const item = nearest[idx];
+      if (!item || !item.feature || !item.feature.geometry) return;
+      const g = item.feature;
+      const geom = g.geometry;
+      view.goTo({ target: geom, zoom: 15 }).catch(()=>{});
+      view.openPopup({
+        features: [g],
+        location: geom
+      });
     }
-    view.on("drag", ()=>{ if(view.center) findNearest(view.center.clone()); });
-    view.when(()=>{ if(view.center) findNearest(view.center); });
-    let moveTimeout; view.on("pointer-move", (e)=>{ clearTimeout(moveTimeout); moveTimeout = setTimeout(() => { const pt = view.toMap({x: e.x, y: e.y}); if(pt) findNearest(pt); }, 100); });
+
+    function attachNearestEvents() {
+      const rows = infoContent.querySelectorAll(".nearest-item");
+      rows.forEach(row => {
+        row.addEventListener("click", () => {
+          const idx = Number(row.getAttribute("data-idx"));
+          if (!Number.isNaN(idx)) focusNearestIndex(idx);
+        });
+      });
+    }
+
+    function renderInfo(){
+      let html = "<h4 style='margin:4px 0 6px; text-align:center;'>Pontos de água mais próximos <small>(até 10 km)</small>:</h4>";
+      if(!nearest.length){
+        html += "<p style='margin:0'>Nenhum ponto encontrado.</p>";
+      } else {
+        html += "<div class='nearest-list'>";
+        nearest.forEach((o, idx) => {
+          const a = o.feature.attributes || {};
+          const name = a.nomenome || a.nome || "Sem nome";
+          const type = a.tipologia ? (" ("+a.tipologia+")") : "";
+          const distLabel = o.distance.toLocaleString('pt-PT')+" m";
+          const dotColor = "#0070ff";
+          html += `
+            <div class="nearest-item" data-idx="${idx}">
+              <span class="nearest-dot" style="background-color:${dotColor};"></span>
+              <div class="nearest-text">
+                <div class="nearest-name"><strong>${name}</strong>${type}</div>
+                <div class="nearest-distance">${distLabel}</div>
+              </div>
+            </div>
+          `;
+        });
+        html += "</div>";
+      }
+      infoContent.innerHTML = html;
+      attachNearestEvents();
+    }
+
+    // Auto: quando la view è pronta + quando si ferma (centro mappa)
+    view.when(() => {
+      updateScaleBar();
+      if (view.center) findNearest(view.center);
+    });
+
+    reactiveUtils.watch(
+      () => view.stationary,
+      (stationary) => {
+        if (stationary && view.center) {
+          findNearest(view.center.clone());
+        }
+      }
+    );
+
+    // Misura anche da click/tap (punto cliccato)
+    view.on("click", (event) => {
+      if (!event.mapPoint) return;
+      let pt = event.mapPoint;
+      if (pt.spatialReference && pt.spatialReference.wkid !== 4326) {
+        pt = webMercatorUtils.webMercatorToGeographic(pt);
+      }
+      findNearest(pt);
+    });
 
     /* ====== GPS ====== */
     btnGPS.addEventListener("click", ()=>{
@@ -512,8 +646,7 @@
       );
     });
 
-    
-    /* ====== VIIRS — Deepseek-style symbols & animations ====== */
+    /* ====== VIIRS — (invariato, solo integrato) ====== */
     const VIIRS_QUERY_BASE =
       "https://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/Satellite_VIIRS_Thermal_Hotspots_and_Fire_Activity/FeatureServer/0/query";
 
@@ -530,8 +663,8 @@
 
     let viirsFeaturesCache = [];
     let viirsOn = false;
-    let viirsHotMode = false;               // double-click / long-press: accent top-10 FRP
-    let viirsAnimTimers = [];               // to clear flashing intervals on redraw
+    let viirsHotMode = false;
+    let viirsAnimTimers = [];
 
     function clearAnimTimers(){
       for (const t of viirsAnimTimers) try { clearInterval(t); } catch(_){}
@@ -568,7 +701,6 @@
       clearAnimTimers();
       const scale = view.scale || 1000000;
 
-      // Build enriched array with timestamps and frp
       const enriched = [];
       for(const f of viirsFeaturesCache){
         const c = f.geometry && f.geometry.coordinates; if(!c) continue;
@@ -578,13 +710,11 @@
         const t = acquiredIso ? (new Date(acquiredIso)).getTime() : 0;
         enriched.push({f, c, attrs, frp, t});
       }
-      // Sort for recency and heat
-      const byRecent = [...enriched].sort((a,b)=>b.t - a.t).slice(0, 10);       // last 10 acquired
-      const byHot    = [...enriched].sort((a,b)=>b.frp - a.frp).slice(0, 10);   // 10 highest FRP
+      const byRecent = [...enriched].sort((a,b)=>b.t - a.t).slice(0, 10);
+      const byHot    = [...enriched].sort((a,b)=>b.frp - a.frp).slice(0, 10);
       const recentSet = new Set(byRecent.map(o=>o.f));
       const hotSet    = new Set(byHot.map(o=>o.f));
 
-      // Draw all points with base symbology
       for(const o of enriched){
         const lon = +o.c[0], lat = +o.c[1];
         const frp = o.frp;
@@ -593,7 +723,6 @@
         const sizes = viirsClass(frp);
         const delta = sizeDeltaForScale(scale);
 
-        // Optional yellow halo scaled by FRP class
         if (sizes.halo){
           viirsLayer.add(new Graphic({
             geometry: { type:"point", longitude: lon, latitude: lat },
@@ -604,11 +733,10 @@
               size: sizes.halo + delta,
               outline:{ color:[255,255,255,0], width:0 }
             }),
-            popupTemplate: createVIIRSPopupTemplate ? createVIIRSPopupTemplate(o.attrs) : viirsPopup(o.attrs, lon, lat)
+            popupTemplate: createVIIRSPopupTemplate(o.attrs)
           }));
         }
 
-        // Core symbol
         viirsLayer.add(new Graphic({
           geometry: { type:"point", longitude: lon, latitude: lat },
           attributes: o.attrs,
@@ -618,24 +746,22 @@
             size: sizes.core + delta,
             outline:{ color:[60,0,0, alpha], width:0 }
           }),
-          popupTemplate: createVIIRSPopupTemplate ? createVIIRSPopupTemplate(o.attrs) : viirsPopup(o.attrs, lon, lat)
+          popupTemplate: createVIIRSPopupTemplate(o.attrs)
         }));
 
-        // Special blue ring for FRP > 200 (always)
         if (frp > 200){
           const ring = new Graphic({
             geometry: { type:"point", longitude: lon, latitude: lat },
             attributes: o.attrs,
             symbol: new SimpleMarkerSymbol({
               style:"circle",
-              color:[13,71,161, 0.18],              // dark blue translucent
+              color:[13,71,161, 0.18],
               size: (sizes.halo || sizes.core) + delta + 8,
               outline:{ color:[13,71,161, 0.7], width:1.5 }
             })
           });
           viirsLayer.add(ring);
 
-          // gentle pulse (reduced when hot-mode to meet "minore halo")
           let grow = true;
           viirsAnimTimers.push(setInterval(()=>{
             const base = (sizes.halo || sizes.core) + delta + 6;
@@ -649,7 +775,6 @@
           }, 180));
         }
 
-        // Flashing effect for the 10 most recent acquisitions
         if (recentSet.has(o.f)){
           const flash = new Graphic({
             geometry: { type:"point", longitude: lon, latitude: lat },
@@ -670,7 +795,6 @@
           }, 220));
         }
 
-        // Accento visivo in hot-mode per i 10 più caldi (FRP)
         if (viirsHotMode && hotSet.has(o.f)){
           const hotRing = new Graphic({
             geometry: { type:"point", longitude: lon, latitude: lat },
@@ -689,14 +813,12 @@
 
     function clearVIIRS(){ viirsLayer.removeAll(); viirsFeaturesCache = []; clearAnimTimers(); }
 
-    // Button interactions
     function setFireButtonVisual(){
       if(!viirsOn){ setBtnState('off'); btnFire.setAttribute("aria-pressed","false"); }
       else if(viirsHotMode){ setBtnState('hot'); btnFire.setAttribute("aria-pressed","true"); }
       else { setBtnState('on'); btnFire.setAttribute("aria-pressed","true"); }
     }
 
-    // single click: toggle layer
     btnFire.addEventListener("click", ()=>{
       const on = btnFire.getAttribute("aria-pressed")==="true";
       if(on){ viirsOn=false; viirsHotMode=false; clearVIIRS(); showToast("Incêndios VIIRS: OFF"); }
@@ -704,7 +826,6 @@
       setFireButtonVisual();
     });
 
-    // double click: toggle hot mode (requires layer ON)
     btnFire.addEventListener("dblclick", (e)=>{
       e.preventDefault();
       if(!viirsOn){ viirsOn=true; loadVIIRSAll(); }
@@ -714,35 +835,25 @@
       showToast(viirsHotMode ? "Top 10 FRP (modo quente)" : "Vista normal VIIRS");
     });
 
-    // long-press (mobile & mouse): 500ms
     (function(){
       let pressTimer = null;
-      btnFire.addEventListener("mousedown", (e)=>{
-        pressTimer = setTimeout(()=>{
-          if(!viirsOn){ viirsOn=true; loadVIIRSAll(); }
-          viirsHotMode = !viirsHotMode;
-          setFireButtonVisual();
-          if(viirsFeaturesCache.length) redrawVIIRS();
-          showToast(viirsHotMode ? "Top 10 FRP (modo quente)" : "Vista normal VIIRS");
-        }, 500);
-      });
+      const toggleHot = ()=>{
+        if(!viirsOn){ viirsOn=true; loadVIIRSAll(); }
+        viirsHotMode = !viirsHotMode;
+        setFireButtonVisual();
+        if(viirsFeaturesCache.length) redrawVIIRS();
+        showToast(viirsHotMode ? "Top 10 FRP (modo quente)" : "Vista normal VIIRS");
+      };
+      btnFire.addEventListener("mousedown", ()=>{ pressTimer = setTimeout(toggleHot, 500); });
       ["mouseup","mouseleave","mouseout","touchend","touchcancel"].forEach(ev=>{
         btnFire.addEventListener(ev, ()=>{ if(pressTimer){ clearTimeout(pressTimer); pressTimer=null; } });
       });
-      btnFire.addEventListener("touchstart", (e)=>{
-        pressTimer = setTimeout(()=>{
-          if(!viirsOn){ viirsOn=true; loadVIIRSAll(); }
-          viirsHotMode = !viirsHotMode;
-          setFireButtonVisual();
-          if(viirsFeaturesCache.length) redrawVIIRS();
-          showToast(viirsHotMode ? "Top 10 FRP (modo quente)" : "Vista normal VIIRS");
-        }, 500);
-      }, {passive:true});
+      btnFire.addEventListener("touchstart", ()=>{ pressTimer = setTimeout(toggleHot, 500); }, {passive:true});
     })();
 
     view.watch("scale", ()=>{ if (viirsOn && viirsFeaturesCache.length) redrawVIIRS(); });
 
-    // === Helpers from Deepseek for robust time parsing ===
+    // Helpers VIIRS (come nel file originale)
     function parseDateUTC(raw) {
       if (raw == null) return null;
       if (raw instanceof Date && !isNaN(raw)) return raw;
@@ -756,6 +867,7 @@
       const d = new Date(s);
       return isNaN(d) ? null : d;
     }
+
     function hoursSinceUTC(acquiredRaw, now = new Date()) {
       const acquired = parseDateUTC(acquiredRaw);
       if (!acquired) return { value: null, label: '—' };
@@ -787,32 +899,8 @@
     }
     function viirsClass(frp){ if (frp>750) return { core:12, halo:18 }; if (frp>300) return { core:10, halo:14 }; if (frp>100) return { core:8, halo:0 }; if (frp>10) return { core:6, halo:0 }; return { core:4, halo:0 }; }
     function sizeDeltaForScale(scale){ if (scale>2000000) return 0; if (scale>1000000) return 1; if (scale>500000) return 2; if (scale>250000) return 2; if (scale>35000) return 3; return 3; }
-    function viirsPopup(attrs, lon, lat){
-      const num = v => (Number.isFinite(v) ? v : NaN);
-      const frp  = num(Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW));
-      const conf = attrs.confidence ?? attrs.conf ?? attrs.confidence_text ?? "";
-      const dnRaw = attrs.daynight ?? attrs.DayNight ?? attrs.DN ?? "";
-      const dn  = (dnRaw==="D" ? "Day" : dnRaw==="N" ? "Night" : (dnRaw||""));
-      const sat = attrs.satellite ?? attrs.sat ?? "";
-      const acquiredIso = getAcquiredUTCString(attrs);
-      const acquiredDisp = acquiredIso ? acquiredIso.replace('T',' ').replace('Z',' UTC').slice(0,23) : "—";
-      const hs = hoursSinceUTC(acquiredIso);
-      const hours = Number.isFinite(hs.value) ? hs.value : NaN;
-      const html = `
-        <div style="font-size:12px;line-height:1.25">
-          <div><b>FRP</b>: ${Number.isFinite(frp) ? frp.toFixed(1) + " MW" : "—"}</div>
-          ${sat ? `<div><b>Satellite</b>: ${sat}</div>` : ""}
-          ${dn  ? `<div><b>Day/Night</b>: ${dn}</div>` : ""}
-          ${conf? `<div><b>Confidence</b>: ${conf}</div>` : ""}
-          <div><b>Acquired</b>: ${acquiredDisp}</div>
-          <div><b>Hours since</b>: ${Number.isFinite(hours) ? hs.label : "—"}</div>
-        </div>`;
-      return { title: "VIIRS Thermal Hotspot", content: html };
-    }
-/* =======================================================================================
-       WIDGET “SELEZIONE” — rettangolo → raccoglie feature dei layer visibili → GeoJSON
-       (semplice: contains-only)
-       ======================================================================================= */
+
+    /* ====== WIDGET SELEZIONE (come nel file originale) ====== */
     const selContainer = document.createElement("div");
     selContainer.className = "select-widget";
     selContainer.innerHTML = `
@@ -829,12 +917,11 @@
     `;
     const selectExpand = new Expand({
       view, content: selContainer, expanded:false,
-      expandIconClass:"esri-icon-cursor",   /* icona DIVERSA dalla Legenda */
+      expandIconClass:"esri-icon-cursor",
       expandTooltip:"Selezione"
     });
     view.ui.add(selectExpand, { position: "top-left", index: 4 });
 
-    // SketchViewModel (niente UI nativa: disegno programm.)
     const sketchVM = new SketchViewModel({
       view,
       layer: selectionDrawLayer,
@@ -851,9 +938,8 @@
     const btnCopySel   = selContainer.querySelector("#btnCopySel");
     const btnDownloadSel = selContainer.querySelector("#btnDownloadSel");
 
-    let selectedItems = []; // { geometry, attributes, layerTitle }
+    let selectedItems = [];
 
-    // Helper SR
     const toWGS84 = (geom) => {
       if (!geom) return geom;
       const sr = geom.spatialReference;
@@ -861,7 +947,6 @@
       return webMercatorUtils.webMercatorToGeographic(geom);
     };
 
-    // Start draw
     btnSelectRect.addEventListener("click", ()=>{
       selectionDrawLayer.removeAll(); selectionLayer.removeAll(); selectedItems = []; updateSelCounter();
       sketchVM.create("rectangle");
@@ -870,12 +955,9 @@
       selectionDrawLayer.removeAll(); selectionLayer.removeAll(); selectedItems = []; updateSelCounter();
     });
 
-    // Esecuzione quando il rettangolo è completo
     sketchVM.on("create", (evt)=>{
       if (evt.state === "complete" && evt.graphic?.geometry) {
         const rectWgs = toWGS84(evt.graphic.geometry);
-        // (opzionale) lasciare il rettangolo: rimuovo per avere solo gli highlight
-        // selectionDrawLayer.removeAll();
         runSelection(rectWgs);
       }
     });
@@ -906,7 +988,6 @@
           const gWgs = (g.geometry.spatialReference?.wkid === 4326) ? g.geometry : toWGS84(g.geometry);
           const type = gWgs.type;
 
-          // Prefiltro rapido su extent
           if (type === "point") {
             if (!quickPointInExtent(gWgs, ext)) return;
           } else {
@@ -914,7 +995,6 @@
             if (gExt && !geometryEngine.intersects(ext, gExt)) return;
           }
 
-          // Contains only (semplicità richiesta)
           let hit = geometryEngine.contains(rectWgs, gWgs);
 
           if (hit){
@@ -928,14 +1008,12 @@
       updateSelCounter();
       showToast(`Selezionate ${selectedItems.length} feature`);
       if (selectedItems.length){
-        // zoom sui risultati
         const geoms = selectedItems.map(it => it.geometry);
         const unionExt = geoms.reduce((acc, g) => acc ? acc.union(g.extent) : g.extent, null);
         if (unionExt) view.goTo({ target: unionExt.expand(1.2) }).catch(()=>{});
       }
     }
 
-    // FeatureCollection GeoJSON
     function selectionToGeoJSON(){
       const fc = { type:"FeatureCollection", features: [] };
       for (const it of selectedItems){
@@ -956,7 +1034,6 @@
       return fc;
     }
 
-    // Copia / Download
     btnCopySel.addEventListener("click", ()=>{
       if (!selectedItems.length) { showToast("Nessuna feature selezionata"); return; }
       const fc = selectionToGeoJSON();
@@ -975,75 +1052,8 @@
       a.href = url; a.download = fname; document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(()=> URL.revokeObjectURL(url), 2000);
     });
-    /* ======================================================================================= */
 
-  
-  /* === Helpers for VIIRS most-recent detection & pulse animation (from Document7) === */
-  function parseDateUTC(raw) {
-    if (raw == null) return null;
-    if (raw instanceof Date && !isNaN(raw)) return raw;
-    const s = String(raw).trim();
-    if (/^\d{10}$/.test(s)) return new Date(Number(s) * 1000);
-    if (/^\d{13}$/.test(s)) return new Date(Number(s));
-    if (s.includes('T') && (/[Zz]$/.test(s) || /[+\-]\d{2}:\d{2}$/.test(s))) {
-      const d = new Date(s);
-      return isNaN(d) ? null : d;
-    }
-    const d = new Date(s);
-    return isNaN(d) ? null : d;
-  }
-
-  function getAcquiredUTCString(attrs) {
-    if (attrs?.esritimeutc != null && !Number.isNaN(Number(attrs.esritimeutc))) {
-      const d = new Date(Number(attrs.esritimeutc));
-      return d.toISOString();
-    }
-    if (attrs?.ACQ_DATE && attrs?.ACQ_TIME != null) {
-      const t = String(attrs.ACQ_TIME).padStart(4, '0');
-      const s = `${attrs.ACQ_DATE} ${t.slice(0,2)}:${t.slice(2,4)}:00 UTC`;
-      const d = parseDateUTC(s);
-      return d ? d.toISOString() : null;
-    }
-    const cand = attrs?.acq_time ?? attrs?.Acquired ?? attrs?.acq_datetime ?? attrs?.datetime ?? null;
-    const d = parseDateUTC(cand);
-    return d ? d.toISOString() : null;
-  }
-
-  function animateMostRecentFire(fireFeature) {
-    const c = fireFeature.geometry.coordinates;
-    const lon = +c[0], lat = +c[1];
-    const attrs = fireFeature.properties || {};
-    const frp = Number(attrs.frp ?? attrs.FRP ?? attrs.frp_mw ?? attrs.FRP_MW);
-    const sizes = viirsClass(frp);
-    const scale = view.scale || 1000000;
-    const delta = sizeDeltaForScale(scale);
-
-    const pulseGraphic = new Graphic({
-      geometry: { type:"point", longitude: lon, latitude: lat },
-      symbol: new SimpleMarkerSymbol({
-        style:"circle",
-        color:[255,255,255,0.3],
-        size: sizes.halo ? sizes.halo + delta + 80 : sizes.core + delta + 7,
-        outline:{ color:[255,250,0,0.6], width:2 }
-      })
-    });
-    viirsLayer.add(pulseGraphic);
-
-    let size = sizes.halo ? sizes.halo + delta + 10 : sizes.core + delta + 6;
-    let growing = false;
-    const pulseAnimation = setInterval(() => {
-      if (!viirsOn) { clearInterval(pulseAnimation); return; }
-      size = growing ? size + 8 : size - 8;
-      if (size >= (sizes.halo ? sizes.halo + delta + 12 : sizes.core + delta + 10)) growing = false;
-      if (size <= (sizes.halo ? sizes.halo + delta + 6 : sizes.core + delta + 4))  growing = true;
-      pulseGraphic.symbol.size = size;
-      viirsLayer.remove(pulseGraphic);
-      viirsLayer.add(pulseGraphic);
-    }, 150);
-  }
-
-
-});
+  });
   </script>
 </body>
 </html>
