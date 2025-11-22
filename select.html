@@ -23,7 +23,7 @@
     overflow-y:auto; transition: all 0.3s ease;
   }
   #infoPanel { top:100px; right:10px; width:min(260px,42vw); max-height:50%; opacity:0.9; }
-  #infoPanel.collapsed { max-height:24px; opacity:0.4; padding: 4px; }
+  #infoPanel.collapsed { max-height:28px; opacity:0.6; padding: 8px; }
   #filterPanel { bottom:120px; left:10px; width:min(180px,32vw); max-height:50%; opacity:0.9; }
   #filterPanel.collapsed { max-height:24px; opacity:0.4; padding: 4px; }
   #infoPanel.collapsed #infoContent { display:none; }
@@ -32,9 +32,9 @@
   .toggle-chip {
     position:absolute; top:4px; left:4px; background:#f2f2f2; border:1px solid #ddd;
     cursor:pointer; border-radius:6px; padding:2px 6px; font-size:14px; line-height:1.1; user-select:none;
-    z-index: 10;
+    z-index: 5;
   }
-  .panel-title { display:block; margin-left:22px; margin-bottom:4px; font-size:9px; font-weight:600; }
+  .panel-title { display:block; margin-left:22px; margin-bottom:8px; font-size:9px; font-weight:600; }
 
   select, button { width:100%; padding:6px 8px; margin:2px 0; box-sizing:border-box; font-size:12px; border-radius:6px; }
   button { background-color:#0079c1; color:#fff; border:none; cursor:pointer; }
@@ -71,9 +71,9 @@
 
   /* Scala dinamica */
   #scaleBar {
-    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: rgba(255, 255, 255, 0.8); padding: 2px 5px; border-radius: 2px;
-    font-size: 8px; z-index: 5; box-shadow:0 1px 3px rgba(0,0,0,0.3);
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-10%);
+    background: rgba(255, 255, 255, 0.8); padding: 2px 15px; border-radius: 2px;
+    font-size: 10px; z-index: 3; box-shadow:0 1px 3px rgba(0,0,0,0.3);
     color: #ff0000; font-weight: bold;
   }
 
